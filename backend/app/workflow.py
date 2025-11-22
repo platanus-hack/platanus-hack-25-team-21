@@ -84,8 +84,8 @@ class FraudDetectionWorkflow:
 
     def __init__(
         self,
-        ranking_model: str = "claude-haiku-4-5",
-        detection_model: str = "claude-haiku-4-5",
+        ranking_model: str = "google/gemini-2.5-flash-preview-09-2025",
+        detection_model: str = "google/gemini-2.5-flash-preview-09-2025",
         temperature: float = 0.7
     ):
         """

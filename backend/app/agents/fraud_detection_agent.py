@@ -1,9 +1,10 @@
 """
 Fraud Detection Agent - Deep investigation of individual tenders for fraud indicators
 """
+import os
 from typing import Dict, Any
 
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 
@@ -13,7 +14,7 @@ from app.tools.get_plan import get_plan
 from app.tools.read_buyer_attachments_table import read_buyer_attachments_table
 from app.tools.download_buyer_attachment import download_buyer_attachment
 from app.tools.read_buyer_attachment_doc import read_buyer_attachment_doc
-from app.tools.read_award import read_award
+from app.tools.read_award_result import read_award_result
 
 
 class FraudDetectionAgent:
@@ -45,7 +46,7 @@ class FraudDetectionAgent:
 
     def __init__(
         self,
-        model_name: str = "claude-haiku-4-5",
+        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -59,9 +60,11 @@ class FraudDetectionAgent:
         self.temperature = temperature
 
         # Initialize model
-        model = ChatAnthropic(
-            model_name=model_name,
+        model = ChatOpenAI(
+            model=model_name,
             temperature=temperature,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
         )
 
         # Define comprehensive investigation tools
@@ -70,7 +73,7 @@ class FraudDetectionAgent:
             read_buyer_attachments_table,
             download_buyer_attachment,
             read_buyer_attachment_doc,
-            read_award
+            read_award_result
         ]
 
         # Create fraud detection agent with structured output

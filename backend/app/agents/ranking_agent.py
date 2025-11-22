@@ -1,9 +1,10 @@
 """
 Ranking Agent - Ranks procurement tenders by fraud risk indicators
 """
+import os
 from typing import Dict, Any
 
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 
@@ -42,7 +43,7 @@ class RankingAgent:
 
     def __init__(
         self,
-        model_name: str = "claude-haiku-4-5",
+        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -56,9 +57,11 @@ class RankingAgent:
         self.temperature = temperature
 
         # Initialize model
-        model = ChatAnthropic(
-            model_name=model_name,
+        model = ChatOpenAI(
+            model=model_name,
             temperature=temperature,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
         )
 
         # Define tools for risk assessment
