@@ -54,3 +54,4 @@ htmlcov/
 .mypy_cache/
 
 *jsonl
+*csv
