@@ -17,6 +17,8 @@ services:
 
   backend:
     build: ./backend
+    ports:
+      - "8000:8000"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/app
     depends_on:
@@ -27,6 +29,8 @@ services:
     build: ./frontend
     ports:
       - "4321:4321"
+    environment:
+      PUBLIC_API_URL: http://localhost:8000
     depends_on:
       - backend
 
