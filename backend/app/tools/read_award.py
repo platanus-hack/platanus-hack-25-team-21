@@ -335,6 +335,7 @@ def read_award(id: str) -> Dict[str, Any]:
 
     Returns:
         dict: A dictionary containing:
+            - ok: Boolean indicating if award information is available
             - attachments: List of attached documents with metadata (file, type, description, size, date)
             - overview: Award act overview (vistos, considerando, resuelvo)
             - award_act: Structured award act details (buyer, contact, acquisition data)
@@ -348,6 +349,19 @@ def read_award(id: str) -> Dict[str, Any]:
     response = requests.get(url, timeout=30.0)
     response.raise_for_status()
     main_html = response.text
+    
+    soup = BeautifulSoup(main_html, 'html.parser')
+    img_element = soup.find('input', {'id': 'imgAdjudicacion'})
+    if not img_element:
+        img_element = soup.find('a', {'id': 'imgAdjudicacion'})
+    if not img_element:
+        img_element = soup.find(id='imgAdjudicacion')
+    
+    if not img_element:
+        return {'ok': False}
+    
+    if img_element.get('disabled') == 'disabled':
+        return {'ok': False}
     
     qs = extract_qs_from_award_page(main_html)
     modal_html = fetch_award_modal_html(qs)
@@ -367,6 +381,7 @@ def read_award(id: str) -> Dict[str, Any]:
     details = parse_details(content_soup)
     
     return {
+        'ok': True,
         'attachments': attachments,
         'overview': overview,
         'award_act': award_act,
