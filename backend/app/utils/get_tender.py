@@ -1,6 +1,10 @@
-import requests
+import httpx
+import asyncio
 from pydantic import BaseModel
 from datetime import datetime
+from bs4 import BeautifulSoup
+import re
+from typing import Optional
 
 class TenderDate(BaseModel):
     publish: datetime
@@ -69,6 +73,11 @@ class TenderPurchaseData(BaseModel):
     orgUnit: OrgUnit
 
 
+class TenderType(BaseModel):
+    description: str
+    currency: str
+
+
 class TenderResponse(BaseModel):
     tenderId: str
     name: str
@@ -79,12 +88,78 @@ class TenderResponse(BaseModel):
     TenderEvaluationCriteria: list[TenderEvaluationCriteria]
     TenderGuarantees: list[TenderGuarantee]
     tenderPurchaseData: TenderPurchaseData
+    type: Optional[TenderType] = None
 
 
-def get_tender(tender_id: str) -> TenderResponse:
+async def extract_qs_from_tender_page(tender_id: str, client: httpx.AsyncClient) -> Optional[str]:
+    url = f"https://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idlicitacion={tender_id}"
+    
+    try:
+        response = await client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        img_element = soup.find('input', {'id': 'imgAdjudicacion'})
+        if not img_element:
+            img_element = soup.find('a', {'id': 'imgAdjudicacion'})
+        if not img_element:
+            img_element = soup.find(id='imgAdjudicacion')
+        
+        if not img_element:
+            return None
+        
+        href = img_element.get('href', '')
+        match = re.search(r'qs=([^&"]+)', href)
+        if not match:
+            return None
+        
+        return match.group(1)
+    except Exception:
+        return None
+
+
+async def fetch_tender_type(qs: str, client: httpx.AsyncClient) -> Optional[TenderType]:
+    url = f"https://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?qs={qs}"
+    
+    try:
+        response = await client.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        type_span = soup.find('span', id='lblFicha1Tipo')
+        currency_span = soup.find('span', id='lblFicha1Moneda')
+        
+        if not type_span or not currency_span:
+            return None
+        
+        description = type_span.get_text(strip=True)
+        currency = currency_span.get_text(strip=True)
+        
+        if not description or not currency:
+            return None
+        
+        return TenderType(description=description, currency=currency)
+    except Exception:
+        return None
+
+
+async def get_tender(tender_id: str) -> TenderResponse:
     url = f"https://api.licitalab.cl/free/tender/{tender_id}"
     
-    response = requests.get(url, timeout=30.0)
-    response.raise_for_status()
-    return TenderResponse.model_validate(response.json())
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        api_response, qs = await asyncio.gather(
+            client.get(url),
+            extract_qs_from_tender_page(tender_id, client)
+        )
+        
+        api_response.raise_for_status()
+        tender_data = TenderResponse.model_validate(api_response.json())
+    
+    if qs:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            tender_type = await fetch_tender_type(qs, client)
+            if tender_type:
+                tender_data.type = tender_type
+    
+    return tender_data
 

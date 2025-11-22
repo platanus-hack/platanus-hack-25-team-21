@@ -316,7 +316,7 @@ class ReadAwardInput(BaseModel):
 
 
 @tool(args_schema=ReadAwardInput)
-def read_award(id: str) -> Dict[str, Any]:
+def read_award_result(id: str) -> Dict[str, Any]:
     """Retrieve complete award information for a tender from Mercado Público.
 
     This tool fetches and parses detailed award data including attachments, overview, 
