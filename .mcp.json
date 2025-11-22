@@ -1,0 +1,25 @@
+{
+    "mcpServers": {
+        "postgres": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-postgres",
+                "postgresql://postgres:postgres@localhost:5432/app"
+            ]
+        },
+        "langgraph-langchain-docs-mcp": {
+            "command": "uvx",
+            "args": [
+                "--from",
+                "mcpdoc",
+                "mcpdoc",
+                "--urls",
+                "LangGraph:https://langchain-ai.github.io/langgraph/llms.txt LangChain:https://docs.langchain.com/llms.txt",
+                "--transport",
+                "stdio"
+            ]
+        }
+    }
+}
+  
