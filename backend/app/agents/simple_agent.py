@@ -44,7 +44,7 @@ class SimpleAgent:
 
     def __init__(
         self,
-        model_name: str = "claude-sonnet-4-5",
+        model_name: str = "claude-haiku-4-5",
         temperature: float = 0.7,
     ):
         """

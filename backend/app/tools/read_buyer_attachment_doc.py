@@ -1,6 +1,5 @@
 import base64
 import os
-from typing import Optional
 from pydantic import BaseModel, Field
 from langchain.tools import tool
 
@@ -19,13 +18,11 @@ class ReadBuyerAttachmentDocInput(BaseModel):
     row_id: int = Field(
         description="The row ID of the attachment to read (from the attachments table)"
     )
-    start_page: Optional[int] = Field(
-        default=None,
-        description="Starting page number (1-indexed). If not specified, starts from page 1"
+    start_page: int = Field(
+        description="Starting page number (1-indexed). REQUIRED - you must specify which page to start reading from"
     )
-    end_page: Optional[int] = Field(
-        default=None,
-        description="Ending page number (1-indexed, inclusive). If not specified, reads until last page"
+    end_page: int = Field(
+        description="Ending page number (1-indexed, inclusive). REQUIRED - you must specify which page to end reading at"
     )
 
 
@@ -33,35 +30,19 @@ class ReadBuyerAttachmentDocInput(BaseModel):
 def read_buyer_attachment_doc(
     tender_id: str,
     row_id: int,
-    start_page: Optional[int] = None,
-    end_page: Optional[int] = None
+    start_page: int,
+    end_page: int
 ) -> dict:
-    """Read and extract text from a buyer attachment PDF document using Mistral OCR.
-
-    This tool downloads a tender attachment and extracts text content using
-    Mistral's OCR API. The OCR preserves document structure and returns markdown-formatted text.
-    You can optionally specify a page range to read.
-
-    Use this tool when you need to:
-    - Extract text content from tender PDF documents (including scanned PDFs)
-    - Analyze document content with preserved structure (tables, lists, headers)
-    - Read technical specifications, budgets, certificates, and other tender documents
-    - Read specific page ranges from large documents
+    """Extract text from PDF using OCR. ALWAYS preview (pages 1-2) before reading more.
 
     Args:
-        tender_id: The tender ID (licitación ID) from Mercado Público
-        row_id: The row ID of the attachment (use read_buyer_attachments_table to get this)
-        start_page: Starting page number (1-indexed). Defaults to 1 if not specified
-        end_page: Ending page number (1-indexed, inclusive). Defaults to last page if not specified
+        tender_id: Tender ID
+        row_id: Attachment ID from read_buyer_attachments_table
+        start_page: Start page (1-indexed, REQUIRED)
+        end_page: End page (1-indexed inclusive, REQUIRED)
 
     Returns:
-        dict: A dictionary containing:
-            - text (str): Extracted text content in markdown format
-            - total_pages (int): Total number of pages in the document
-            - pages_read (list[int]): List of page numbers that were read (1-indexed)
-            - file_size (int): Size of the file in bytes
-            - success (bool): Whether the operation was successful
-            - error (str, optional): Error message if operation failed
+        dict: {text, total_pages, pages_read, file_size, success, error?}
     """
     # Check for Mistral API key
     api_key = os.environ.get("MISTRAL_API_KEY")
@@ -86,17 +67,12 @@ def read_buyer_attachment_doc(
         # Initialize Mistral client
         client = Mistral(api_key=api_key)
 
-        # Build pages array for Mistral API if start_page or end_page specified
-        pages_to_process = None
-
-        if start_page is not None or end_page is not None:
-            # Convert from 1-indexed to 0-indexed
-            start = (start_page - 1) if start_page else 0
-            # End is inclusive in user input, but we need to handle it correctly for range
-            # If end_page is None, we'll process all pages (handled by not setting pages param)
-            if end_page is not None:
-                # Build range list (Mistral expects array of page numbers, 0-indexed)
-                pages_to_process = list(range(start, end_page))  # end_page is already inclusive in 1-indexed, so we use it directly
+        # Build pages array for Mistral API
+        # Convert from 1-indexed to 0-indexed
+        start = start_page - 1
+        # Build range list (Mistral expects array of page numbers, 0-indexed)
+        # end_page is inclusive in 1-indexed input, so we use it directly as the upper bound
+        pages_to_process = list(range(start, end_page))
 
         # Prepare OCR request parameters
         ocr_params = {
@@ -108,9 +84,8 @@ def read_buyer_attachment_doc(
             "include_image_base64": False  # We only need text, not images
         }
 
-        # Add pages parameter if specified
-        if pages_to_process is not None:
-            ocr_params["pages"] = pages_to_process
+        # Add pages parameter
+        ocr_params["pages"] = pages_to_process
 
         # Call Mistral OCR API
         ocr_response = client.ocr.process(**ocr_params)
