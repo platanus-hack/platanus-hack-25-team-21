@@ -81,15 +81,50 @@ function App() {
     fetchTotalTenders()
   }, [])
 
+  // Transform backend tender to frontend format
+  const transformTender = (backendTender: any): Tender => {
+    // Extract buyer organization from parties JSON
+    let organization = 'Organización no especificada'
+    let amount = 0
+
+    if (backendTender.parties && Array.isArray(backendTender.parties)) {
+      const buyer = backendTender.parties.find((p: any) =>
+        p.roles && p.roles.includes('buyer')
+      )
+      if (buyer && buyer.name) {
+        organization = buyer.name
+      }
+
+      // Get amount from supplier/tenderer if available
+      const supplier = backendTender.parties.find((p: any) =>
+        p.roles && (p.roles.includes('supplier') || p.roles.includes('tenderer'))
+      )
+      if (supplier && supplier.value && supplier.value.amount) {
+        amount = supplier.value.amount
+      }
+    }
+
+    return {
+      id: String(backendTender.id),
+      name: backendTender.title || 'Sin título',
+      organization,
+      amount,
+      date: backendTender.published_date ?
+        new Date(backendTender.published_date).toISOString().split('T')[0] : '',
+      flags: [] // Backend doesn't have flags yet
+    }
+  }
+
   const fetchTotalTenders = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/tenders`)
+      const res = await fetch(`${API_URL}/api/tenders`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setTotalTenders(data.total || data.length || 0)
+      setTotalTenders(data.total || 0)
     } catch (error) {
       console.error('Error fetching tenders:', error)
-      setTotalTenders(1247) // Mock data for demo
+      setTotalTenders(null)
     }
     setLoading(false)
   }
@@ -102,25 +137,19 @@ function App() {
 
   const applyFilters = async () => {
     setLoading(true)
-    const activeFlags = flags.filter(f => f.active).map(f => f.id)
-
+    // Note: Backend doesn't support flag filtering yet, fetching all tenders
     try {
-      const res = await fetch(`${API_URL}/tenders?flags=${activeFlags.join(',')}`)
+      const res = await fetch(`${API_URL}/api/tenders?limit=100`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setTenders(data.items || data || [])
-      setFilteredCount(data.total || data.length || 0)
+
+      const transformedTenders = (data.tenders || []).map(transformTender)
+      setTenders(transformedTenders)
+      setFilteredCount(data.total || transformedTenders.length)
     } catch (error) {
       console.error('Error filtering tenders:', error)
-      // Mock data for demo
-      const mockTenders: Tender[] = [
-        { id: '1', name: 'Adquisición de equipos computacionales', organization: 'Ministerio de Salud', amount: 45000000, date: '2024-01-15', flags: ['new_company', 'single_bidder'] },
-        { id: '2', name: 'Servicio de mantención de vehículos', organization: 'Carabineros de Chile', amount: 23500000, date: '2024-01-12', flags: ['price_anomaly'] },
-        { id: '3', name: 'Construcción de infraestructura deportiva', organization: 'Municipalidad de Santiago', amount: 180000000, date: '2024-01-10', flags: ['short_deadline', 'modified_specs'] },
-        { id: '4', name: 'Suministro de insumos médicos', organization: 'Hospital San José', amount: 67000000, date: '2024-01-08', flags: ['same_winner', 'new_company'] },
-        { id: '5', name: 'Servicios de consultoría TI', organization: 'SII', amount: 92000000, date: '2024-01-05', flags: ['single_bidder', 'price_anomaly'] },
-      ]
-      setTenders(mockTenders)
-      setFilteredCount(mockTenders.length)
+      setTenders([])
+      setFilteredCount(0)
     }
     setLoading(false)
     setStep('select')
