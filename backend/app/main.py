@@ -1,18 +1,23 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from fastapi.responses import Response
 
+from app.tools.read_supplier_attachments import (
+    download_buyer_attachment_by_tender_id_and_row_id,
+    read_buyer_attachments_table,
+)
 from app.database import get_db
-from app.models import Item, Tender, Party
-from app.schemas import ItemCreate, ItemResponse
+from app.models import Tender, Party
 from app.chilecompra import import_data
+from sqlalchemy.orm import Session
+from fastapi import Depends
 
 app = FastAPI(title="API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4321", "http://frontend:4321"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -48,10 +53,19 @@ def get_tender(tender_id: int, db: Session = Depends(get_db)):
     return {"tender": tender, "parties": parties}
 
 
+@app.get("/api/tenders/{tender_id}/buyer-attachments-table")
+def get_buyer_attachments_table(tender_id: str):
+    return read_buyer_attachments_table(tender_id)
+
+
+@app.get("/api/tenders/{tender_id}/download-attachment/{row_id}")
+def download_attachment(tender_id: str, row_id: int):
+    content = download_buyer_attachment_by_tender_id_and_row_id(tender_id, row_id)
+    return Response(content=content, media_type="application/octet-stream")
+
+
 @app.get("/api/parties")
 def get_parties(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """Get list of parties."""
     parties = db.query(Party).offset(skip).limit(limit).all()
     return parties
-
-
