@@ -4,8 +4,14 @@ Helper function to build RankingInput from TenderResponse and documents
 from typing import Dict, Any, List
 from app.utils.get_tender import TenderResponse
 from app.schemas import RankingInput
-from app.tools.read_buyer_attachments_table import read_buyer_attachments_table
-from app.tools.read_buyer_attachment_doc import read_buyer_attachment_doc
+# Import underlying functions instead of LangChain tools
+from app.tools.read_supplier_attachments import (
+    read_buyer_attachments_table,
+    download_buyer_attachment_by_tender_id_and_row_id
+)
+from mistralai import Mistral
+from app.config import settings
+import base64
 
 
 def build_ranking_input(
@@ -146,27 +152,60 @@ def fetch_and_extract_documents(tender_id: str, max_docs: int = 3) -> List[Dict[
                 print(f"  Attempting to read document {idx + 1}: {att_name}")
 
                 # Extract first few pages to get overview
-                doc_content = read_buyer_attachment_doc(
-                    tender_id=tender_id,
-                    row_id=idx + 1,  # Usually 1-indexed
-                    start_page=1,
-                    end_page=5  # Read first 5 pages
+                api_key = settings.mistral_api_key
+                if not api_key:
+                    print(f"  ✗ MISTRAL_API_KEY not set, skipping document {idx + 1}")
+                    continue
+
+                # Download the file content
+                file_content = download_buyer_attachment_by_tender_id_and_row_id(tender_id, idx)
+
+                # Encode PDF to base64
+                base64_pdf = base64.b64encode(file_content).decode('utf-8')
+
+                # Initialize Mistral client
+                client = Mistral(api_key=api_key)
+
+                # Read first 5 pages (0-indexed: 0-4)
+                start_page = 1
+                end_page = 5
+                pages_to_process = list(range(start_page - 1, end_page))
+
+                # Call Mistral OCR API
+                ocr_response = client.ocr.process(
+                    model="mistral-ocr-latest",
+                    document={
+                        "type": "document_url",
+                        "document_url": f"data:application/pdf;base64,{base64_pdf}"
+                    },
+                    pages=pages_to_process,
+                    include_image_base64=False
                 )
 
-                if doc_content and isinstance(doc_content, dict):
-                    content = doc_content.get("content", "")
-                    if content:
-                        documents.append({
-                            "row_id": idx + 1,
-                            "name": att_name,
-                            "content": content,
-                            "pages_read": "1-5"
-                        })
-                        print(f"  ✓ Successfully read document {idx + 1}")
-                    else:
-                        print(f"  ✗ Document {idx + 1} has no content")
+                # Extract text from response
+                extracted_text = []
+                pages_read = []
+
+                for page in ocr_response.pages:
+                    page_num = page.index  # 0-indexed
+                    markdown_text = page.markdown
+
+                    if markdown_text:
+                        extracted_text.append(f"--- Page {page_num + 1} ---\n{markdown_text}")
+                        pages_read.append(page_num + 1)
+
+                combined_text = "\n\n".join(extracted_text)
+
+                if combined_text:
+                    documents.append({
+                        "row_id": idx + 1,
+                        "name": att_name,
+                        "content": combined_text,
+                        "pages_read": "1-5"
+                    })
+                    print(f"  ✓ Successfully read document {idx + 1}")
                 else:
-                    print(f"  ✗ Document {idx + 1} returned invalid format")
+                    print(f"  ✗ Document {idx + 1} has no content")
 
             except Exception as e:
                 # Skip documents that fail to load
