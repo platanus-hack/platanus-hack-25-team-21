@@ -157,8 +157,9 @@ read_buyer_attachment_doc("Bases_Administrativas.pdf", 10, 15)
 3. **Always connect to fraud risk** - explain why each violation matters
 4. **Cite concrete evidence** - page numbers, exact quotes, document names
 5. **Weight confidence properly** - certainty × fraud severity
-6. **Complete all subtasks** - address each validation point
-7. **Be honest about gaps** - if data is missing, say so
+6. **TOOL CALL BUDGET: Maximum 50 tool calls per investigation** - Be strategic and focused. If approaching this limit, conclude your investigation with findings gathered so far
+7. **Complete all subtasks** - address each validation point
+8. **Be honest about gaps** - if data is missing, say so
 
 Build clear, evidence-based findings that connect violations to fraud patterns. Be specific, defensible, and fraud-focused.
 """

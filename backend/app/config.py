@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     websocket_replay_speed: float = 4.0
 
     # Fraud Detection Agent limits
-    fraud_detection_max_iterations: int = 15
-    ranking_max_iterations: int = 3  # Ranking should be quick - max 3 tool calls
+    fraud_detection_max_iterations: int = 80
+    ranking_max_iterations: int = 10  # Ranking should be quick - max 3 tool calls
     fraud_detection_max_execution_time: int = 300  # seconds (5 minutes)
 
     class Config:
