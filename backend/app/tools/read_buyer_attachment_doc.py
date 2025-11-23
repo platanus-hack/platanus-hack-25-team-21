@@ -120,6 +120,9 @@ def read_buyer_attachment_doc(
         }
 
     except Exception as e:
+        import traceback
+        print(f"Error reading buyer attachment doc: {e}")
+        traceback.print_exc()
         return {
             "text": None,
             "total_pages": 0,

@@ -74,7 +74,9 @@ class ConnectionManager:
             try:
                 await connection.send_json(observation)
             except Exception as e:
+                import traceback
                 logger.error(f"Error sending to client in session {session_id}: {e}")
+                traceback.print_exc()
                 disconnected.append(connection)
 
         # Clean up disconnected clients
@@ -100,7 +102,9 @@ class ConnectionManager:
             try:
                 await connection.send_text(message)
             except Exception as e:
+                import traceback
                 logger.error(f"Error sending to client in session {session_id}: {e}")
+                traceback.print_exc()
                 disconnected.append(connection)
 
         for connection in disconnected:

@@ -1,11 +1,14 @@
 """
 Helper function to build RankingInput from TenderResponse and documents
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+import asyncio
+from datetime import datetime
 from app.utils.get_tender import TenderResponse
 from app.schemas import RankingInput
 from app.tools.read_buyer_attachments_table import read_buyer_attachments_table
 from app.tools.read_buyer_attachment_doc import read_buyer_attachment_doc
+from app.utils.websocket_manager import manager
 
 
 def build_ranking_input(
@@ -109,13 +112,39 @@ El análisis se basará únicamente en la metadata disponible del tender
     )
 
 
-def fetch_and_extract_documents(tender_id: str, max_docs: int = 3) -> List[Dict[str, Any]]:
+def _send_log(session_id: Optional[str], message: str):
+    """
+    Helper to send WebSocket log messages.
+
+    Args:
+        session_id: Optional session ID for WebSocket streaming
+        message: Log message to send
+    """
+    if session_id:
+        try:
+            asyncio.run(manager.send_observation(session_id, {
+                "type": "log",
+                "message": message,
+                "timestamp": datetime.now().isoformat()
+            }))
+        except Exception as e:
+            import traceback
+            print(f"Failed to send log to WebSocket: {e}")
+            traceback.print_exc()
+
+
+def fetch_and_extract_documents(
+    tender_id: str,
+    max_docs: int = 3,
+    session_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """
     Fetch and extract content from tender documents.
 
     Args:
         tender_id: Tender ID
         max_docs: Maximum number of documents to fetch (default 3)
+        session_id: Optional session ID for WebSocket streaming
 
     Returns:
         List of documents with extracted content (may be empty if no docs available)
@@ -128,21 +157,26 @@ def fetch_and_extract_documents(tender_id: str, max_docs: int = 3) -> List[Dict[
 
         # Handle case where attachments is None or not a list
         if not attachments:
+            _send_log(session_id, "No attachments found for tender")
             print(f"No attachments found for tender {tender_id}")
             return documents
 
         if not isinstance(attachments, list):
+            _send_log(session_id, f"Unexpected attachments format: {type(attachments)}")
             print(f"Unexpected attachments format for tender {tender_id}: {type(attachments)}")
             return documents
 
+        _send_log(session_id, f"Found {len(attachments)} attachments available")
         print(f"Found {len(attachments)} attachments for tender {tender_id}")
 
         # Process up to max_docs documents
+        docs_to_process = min(max_docs, len(attachments))
         for idx, attachment in enumerate(attachments[:max_docs]):
             try:
                 # Get attachment name
                 att_name = attachment.get("name", f"Document {idx + 1}") if isinstance(attachment, dict) else f"Document {idx + 1}"
 
+                _send_log(session_id, f"Processing document {idx+1}/{docs_to_process}: {att_name}")
                 print(f"  Attempting to read document {idx + 1}: {att_name}")
 
                 # Extract first few pages to get overview
@@ -162,20 +196,31 @@ def fetch_and_extract_documents(tender_id: str, max_docs: int = 3) -> List[Dict[
                             "content": content,
                             "pages_read": "1-5"
                         })
+                        _send_log(session_id, f"✓ Extracted {att_name} (pages 1-5)")
                         print(f"  ✓ Successfully read document {idx + 1}")
                     else:
+                        _send_log(session_id, f"✗ {att_name} has no content")
                         print(f"  ✗ Document {idx + 1} has no content")
                 else:
+                    _send_log(session_id, f"✗ {att_name} returned invalid format")
                     print(f"  ✗ Document {idx + 1} returned invalid format")
 
             except Exception as e:
                 # Skip documents that fail to load
-                print(f"  ✗ Could not load document {idx + 1}: {type(e).__name__}: {str(e)}")
+                import traceback
+                error_msg = f"{type(e).__name__}: {str(e)}"
+                _send_log(session_id, f"✗ Failed to extract document {idx + 1}: {error_msg}")
+                print(f"  ✗ Could not load document {idx + 1}: {error_msg}")
+                traceback.print_exc()
                 continue
 
     except Exception as e:
         # Don't fail the entire workflow if documents can't be fetched
-        print(f"Warning: Could not fetch attachments for {tender_id}: {type(e).__name__}: {str(e)}")
+        import traceback
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        _send_log(session_id, f"Warning: Could not fetch attachments - {error_msg}")
+        print(f"Warning: Could not fetch attachments for {tender_id}: {error_msg}")
+        traceback.print_exc()
         print("Continuing without document content...")
 
     return documents

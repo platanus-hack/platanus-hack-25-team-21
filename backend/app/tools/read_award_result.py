@@ -177,7 +177,10 @@ def fetch_provider_details(enc_param: str) -> Dict[str, Optional[str]]:
             'rut': rut,
             'sucursal': sucursal
         }
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"Error fetching provider details: {e}")
+        traceback.print_exc()
         return {
             'razon_social': None,
             'rut': None,

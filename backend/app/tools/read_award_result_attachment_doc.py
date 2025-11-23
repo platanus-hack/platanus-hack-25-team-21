@@ -109,6 +109,9 @@ def read_award_result_attachment_doc(id: str, row_id: int, start_page: int, end_
         }
 
     except Exception as e:
+        import traceback
+        print(f"Error reading award result attachment doc: {e}")
+        traceback.print_exc()
         return {
             "text": None,
             "total_pages": 0,

@@ -185,6 +185,9 @@ Investigate systematically and return detailed anomalies with evidence.
                 results.append(result)
             except Exception as e:
                 # Create error response
+                import traceback
+                print(f"Investigation failed for tender {input_data.tender_id}: {e}")
+                traceback.print_exc()
                 error_result = FraudDetectionOutput(
                     tender_id=input_data.tender_id,
                     is_fraudulent=False,

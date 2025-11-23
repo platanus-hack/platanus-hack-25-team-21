@@ -1,6 +1,7 @@
 """
 LangGraph Workflow for Fraud Detection - Orchestrates ranking and parallel investigation
 """
+
 from typing import Annotated, List, Dict, Any, Optional
 from typing_extensions import TypedDict
 import uuid
@@ -26,10 +27,13 @@ from app.schemas import (
     RankedItem,
     FraudDetectionInput,
     FraudDetectionOutput,
-    Anomaly
+    Anomaly,
 )
 from app.utils.get_tender import get_tender, TenderResponse
-from app.utils.build_ranking_input import build_ranking_input, fetch_and_extract_documents
+from app.utils.build_ranking_input import (
+    build_ranking_input,
+    fetch_and_extract_documents,
+)
 from app.investigation_tasks import INVESTIGATION_TASKS, InvestigationTask
 from app.schemas import TaskRankingOutput, TaskInvestigationOutput
 from app.utils.websocket_manager import manager
@@ -37,6 +41,7 @@ from app.utils.websocket_manager import manager
 
 class WorkflowState(TypedDict):
     """State definition for the fraud detection workflow"""
+
     # Input
     tender_id: str
     session_id: Optional[str]  # For WebSocket streaming
@@ -92,7 +97,7 @@ class FraudDetectionWorkflow:
         self,
         ranking_model: str = "google/gemini-2.5-flash-preview-09-2025",
         detection_model: str = "google/gemini-2.5-flash-preview-09-2025",
-        temperature: float = 0.7
+        temperature: float = 0.7,
     ):
         """
         Initialize the workflow with agent configurations.
@@ -103,8 +108,7 @@ class FraudDetectionWorkflow:
             temperature: Temperature for all agents
         """
         self.ranking_agent = RankingAgent(
-            model_name=ranking_model,
-            temperature=temperature
+            model_name=ranking_model, temperature=temperature
         )
         self.detection_model = detection_model
         self.temperature = temperature
@@ -125,13 +129,20 @@ class FraudDetectionWorkflow:
         """
         if session_id:
             try:
-                asyncio.run(manager.send_observation(session_id, {
-                    "type": "log",
-                    "message": message,
-                    "timestamp": datetime.now().isoformat()
-                }))
+                asyncio.run(
+                    manager.send_observation(
+                        session_id,
+                        {
+                            "type": "log",
+                            "message": message,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+                )
             except Exception as e:
+                import traceback
                 print(f"Failed to send log to WebSocket: {e}")
+                traceback.print_exc()
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow graph"""
@@ -177,16 +188,22 @@ class FraudDetectionWorkflow:
             tender_response = asyncio.run(get_tender(tender_id))
             state["tender_response"] = tender_response
 
-            self._send_log(session_id, f"Tender metadata fetched: {tender_response.name}")
+            self._send_log(
+                session_id, f"Tender metadata fetched: {tender_response.name}"
+            )
             print(f"Tender metadata fetched: {tender_response.name}")
 
             # Fetch and extract documents (first 3 documents, first 5 pages each)
             self._send_log(session_id, "Fetching tender documents...")
             print("Fetching tender documents...")
-            tender_documents = fetch_and_extract_documents(tender_id, max_docs=3)
+            tender_documents = fetch_and_extract_documents(
+                tender_id, max_docs=3, session_id=session_id
+            )
             state["tender_documents"] = tender_documents
 
-            self._send_log(session_id, f"Fetched {len(tender_documents)} documents")
+            self._send_log(
+                session_id, f"Successfully fetched {len(tender_documents)} documents"
+            )
             print(f"Fetched {len(tender_documents)} documents")
 
             # Build RankingInput from fetched data
@@ -198,9 +215,19 @@ class FraudDetectionWorkflow:
             print("Tender data processing complete")
 
         except Exception as e:
+            import traceback
             error_msg = f"Failed to fetch tender data: {str(e)}"
-            self._send_log(session_id, f"Error: {error_msg}")
+            self._send_log(session_id, f"ERROR: {error_msg}")
+            self._send_log(
+                session_id,
+                "Creating minimal input to continue workflow with limited data",
+            )
+            self._send_log(
+                session_id,
+                "Note: Analysis will be less accurate due to missing tender data",
+            )
             print(f"Error: {error_msg}")
+            traceback.print_exc()
             state["errors"].append(error_msg)
 
             # Create minimal RankingInput to allow workflow to continue
@@ -210,7 +237,7 @@ class FraudDetectionWorkflow:
                 tender_date="Unknown",
                 bases="Error fetching tender data",
                 bases_tecnicas="Error fetching tender data",
-                additional_context={"error": str(e)}
+                additional_context={"error": str(e)},
             )
 
         return state
@@ -223,7 +250,9 @@ class FraudDetectionWorkflow:
         """
         session_id = state.get("session_id")
 
-        self._send_log(session_id, f"Loading {len(INVESTIGATION_TASKS)} investigation tasks...")
+        self._send_log(
+            session_id, f"Loading {len(INVESTIGATION_TASKS)} investigation tasks..."
+        )
         print(f"Loading {len(INVESTIGATION_TASKS)} investigation tasks...")
 
         state["investigation_tasks"] = INVESTIGATION_TASKS
@@ -248,27 +277,27 @@ class FraudDetectionWorkflow:
             # Prepare message for ranking agent
             tender_context = f"""
 TENDER INFORMATION:
-- ID: {state['input_data'].tender_id}
-- Name: {state['input_data'].tender_name}
-- Date: {state['input_data'].tender_date}
-- Organization: {state['input_data'].additional_context.get('organization', 'Unknown')}
+- ID: {state["input_data"].tender_id}
+- Name: {state["input_data"].tender_name}
+- Date: {state["input_data"].tender_date}
+- Organization: {state["input_data"].additional_context.get("organization", "Unknown")}
 
-AVAILABLE DOCUMENTS ({len(state['tender_documents'])}):
-{chr(10).join(f"- {doc.get('name', 'Unknown')}" for doc in state['tender_documents']) if state['tender_documents'] else '- No documents available'}
+AVAILABLE DOCUMENTS ({len(state["tender_documents"])}):
+{chr(10).join(f"- {doc.get('name', 'Unknown')}" for doc in state["tender_documents"]) if state["tender_documents"] else "- No documents available"}
 
 TENDER CONTEXT:
-{state['input_data'].bases[:500]}...
+{state["input_data"].bases[:500]}...
 
-INVESTIGATION TASKS TO RANK ({len(state['investigation_tasks'])}):
+INVESTIGATION TASKS TO RANK ({len(state["investigation_tasks"])}):
 """
             # Add all tasks
-            for task in state['investigation_tasks']:
+            for task in state["investigation_tasks"]:
                 tender_context += f"""
-Task {task['id']} - {task['code']}: {task['name']}
-- Description: {task['desc']}
-- Where to look: {task['where_to_look']}
-- Severity: {task['severity']}
-- Subtasks: {len(task['subtasks'])}
+Task {task["id"]} - {task["code"]}: {task["name"]}
+- Description: {task["desc"]}
+- Where to look: {task["where_to_look"]}
+- Severity: {task["severity"]}
+- Subtasks: {len(task["subtasks"])}
 """
 
             tender_context += """
@@ -278,33 +307,61 @@ Return the ranked tasks with rationale.
 """
 
             # Run ranking agent
-            self._send_log(session_id, "Analyzing tender and ranking tasks...")
-            ranking_result: TaskRankingOutput = self.ranking_agent.run(RankingInput(
-                tender_id=state['input_data'].tender_id,
-                tender_name=state['input_data'].tender_name,
-                tender_date=state['input_data'].tender_date,
-                bases=tender_context,
-                bases_tecnicas="",
-                additional_context={}
-            ))
+            self._send_log(session_id, "Ranking agent analyzing tender context...")
+            self._send_log(
+                session_id,
+                f"Assembling context: {len(state['investigation_tasks'])} tasks, {len(state['tender_documents'])} documents",
+            )
+            ranking_result: TaskRankingOutput = self.ranking_agent.run(
+                RankingInput(
+                    tender_id=state["input_data"].tender_id,
+                    tender_name=state["input_data"].tender_name,
+                    tender_date=state["input_data"].tender_date,
+                    bases=tender_context,
+                    bases_tecnicas="",
+                    additional_context={},
+                )
+            )
+            self._send_log(
+                session_id,
+                f"Ranking agent completed. Generated {len(ranking_result.ranked_tasks)} ranked tasks",
+            )
 
             # Extract ranked tasks and convert to dictionaries
             ranked_task_objects = ranking_result.ranked_tasks[:5]  # Top 5
             state["ranked_tasks"] = [task.model_dump() for task in ranked_task_objects]
 
-            self._send_log(session_id, f"Task ranking complete. Top {len(state['ranked_tasks'])} tasks selected.")
-            print(f"Task ranking complete. Top {len(state['ranked_tasks'])} tasks selected.")
-            for i, task in enumerate(state['ranked_tasks'], 1):
-                print(f"  {i}. Task {task['id']} ({task['code']}): {task['name'][:50]}...")
+            self._send_log(
+                session_id,
+                f"Task ranking complete. Top {len(state['ranked_tasks'])} tasks selected:",
+            )
+            print(
+                f"Task ranking complete. Top {len(state['ranked_tasks'])} tasks selected."
+            )
+            for i, task in enumerate(state["ranked_tasks"], 1):
+                task_summary = (
+                    f"#{i}: Task {task['id']} - {task['code']} ({task['name'][:60]}...)"
+                )
+                self._send_log(session_id, task_summary)
+                print(
+                    f"  {i}. Task {task['id']} ({task['code']}): {task['name'][:50]}..."
+                )
 
         except Exception as e:
-            self._send_log(session_id, f"Task ranking failed: {e}")
+            import traceback
+            self._send_log(session_id, f"ERROR: Task ranking failed - {str(e)}")
+            self._send_log(
+                session_id, "Using fallback strategy: selecting first 5 tasks by ID"
+            )
+            self._send_log(
+                session_id,
+                "Warning: Results may be less accurate due to ranking failure",
+            )
             print(f"Task ranking failed: {e}")
-            print(f"Traceback: {traceback.format_exc()}")
+            traceback.print_exc()
             state["errors"].append(f"Task ranking error: {str(e)}")
             # Fallback: use first 5 tasks
             state["ranked_tasks"] = state["investigation_tasks"][:5]
-            self._send_log(session_id, "Using fallback: first 5 tasks")
             print(f"Using fallback: first 5 tasks")
 
         return state
@@ -317,7 +374,10 @@ Return the ranked tasks with rationale.
         """
         session_id = state.get("session_id")
 
-        self._send_log(session_id, f"Launching {len(state['ranked_tasks'])} parallel task investigations...")
+        self._send_log(
+            session_id,
+            f"Launching {len(state['ranked_tasks'])} parallel task investigations...",
+        )
         print(f"Launching {len(state['ranked_tasks'])} parallel task investigations...")
 
         # Create Send commands for each ranked task
@@ -325,28 +385,27 @@ Return the ranked tasks with rationale.
 
         for idx, task in enumerate(state["ranked_tasks"]):
             # Prepare input for task investigation
-            task_id = task.get('id', idx)  # Use index as fallback
+            task_id = task.get("id", idx)  # Use index as fallback
+
+            # Log each task being queued
+            self._send_log(
+                session_id,
+                f"Queuing investigation {idx + 1}/{len(state['ranked_tasks'])}: Task {task['id']} - {task['code']}",
+            )
+
             task_input = {
                 "task": task,
                 "tender_context": state["input_data"],
                 "tender_documents": state["tender_documents"],
                 "investigation_id": f"task_{task['id']}_{uuid.uuid4().hex[:8]}",
-                "session_id": session_id  # Pass session_id to child nodes
+                "session_id": session_id,  # Pass session_id to child nodes
             }
 
             # Create Send command to investigate_task node
-            send_commands.append(
-                Send(
-                    "investigate_task",
-                    task_input
-                )
-            )
+            send_commands.append(Send("investigate_task", task_input))
 
         # Return Command with all Send operations
-        return Command(
-            goto=send_commands,
-            update=state
-        )
+        return Command(goto=send_commands, update=state)
 
     def _investigate_task(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -359,25 +418,34 @@ Return the ranked tasks with rationale.
         investigation_id = inputs.get("investigation_id", "unknown")
         session_id = inputs.get("session_id")
 
-        self._send_log(session_id, f"Investigation {investigation_id} starting for Task {task['id']} ({task['code']})...")
-        print(f"Investigation {investigation_id} starting for Task {task['id']} ({task['code']})...")
+        self._send_log(
+            session_id,
+            f"Investigation {investigation_id} starting for Task {task['id']} ({task['code']})...",
+        )
+        print(
+            f"Investigation {investigation_id} starting for Task {task['id']} ({task['code']})..."
+        )
 
         try:
             # Create fraud detection agent
             agent = FraudDetectionAgent(
-                model_name=self.detection_model,
-                temperature=self.temperature
+                model_name=self.detection_model, temperature=self.temperature
             )
 
             # Prepare message for investigation
             tender_context = inputs.get("tender_context")
-            task_id = task.get('id', 0)
-            task_code = task.get('code', 'Unknown')
-            task_name = task.get('name', 'Unknown task')
-            task_desc = task.get('desc', 'No description')
-            task_where = task.get('where_to_look', 'Not specified')
-            task_severity = task.get('severity', 'Unknown')
-            task_subtasks = task.get('subtasks', [])
+            task_id = task.get("id", 0)
+            task_code = task.get("code", "Unknown")
+            task_name = task.get("name", "Unknown task")
+            task_desc = task.get("desc", "No description")
+            task_where = task.get("where_to_look", "Not specified")
+            task_severity = task.get("severity", "Unknown")
+            task_subtasks = task.get("subtasks", [])
+
+            # Log subtask information
+            self._send_log(
+                session_id, f"Task {task_id}: Validating {len(task_subtasks)} subtasks"
+            )
 
             message = f"""
 INVESTIGATION TASK:
@@ -395,15 +463,15 @@ WHERE TO LOOK:
 SEVERITY: {task_severity}
 
 SUBTASKS:
-{chr(10).join(f"{i+1}. {subtask}" for i, subtask in enumerate(task_subtasks))}
+{chr(10).join(f"{i + 1}. {subtask}" for i, subtask in enumerate(task_subtasks))}
 
 TENDER CONTEXT:
 - Tender ID: {tender_context.tender_id}
 - Tender Name: {tender_context.tender_name}
-- Organization: {tender_context.additional_context.get('organization', 'Unknown')}
+- Organization: {tender_context.additional_context.get("organization", "Unknown")}
 
 AVAILABLE DOCUMENTS:
-{chr(10).join(f"- {doc.get('name', 'Unknown')}" for doc in inputs.get('tender_documents', []))}
+{chr(10).join(f"- {doc.get('name', 'Unknown')}" for doc in inputs.get("tender_documents", []))}
 
 TENDER INFORMATION:
 {tender_context.bases[:1000]}...
@@ -412,14 +480,22 @@ Please investigate this task systematically and report your findings.
 """
 
             # Run investigation (reusing FraudDetectionAgent but with task-based input)
-            self._send_log(session_id, f"Running investigation for Task {task['id']} ({task['code']})...")
+            self._send_log(
+                session_id, f"Task {task['id']}: Agent starting deep investigation..."
+            )
             detection_input = FraudDetectionInput(
                 tender_id=tender_context.tender_id,
                 risk_indicators=[task_name],
-                full_context={"task": task, "message": message}
+                full_context={"task": task, "message": message},
             )
 
             result = agent.run(detection_input)
+
+            # Log agent completion
+            self._send_log(
+                session_id,
+                f"Task {task['id']}: Agent completed. Found {len(result.anomalies)} anomalies",
+            )
 
             # Convert to TaskInvestigationOutput
             task_result = TaskInvestigationOutput(
@@ -428,30 +504,44 @@ Please investigate this task systematically and report your findings.
                 task_name=task_name,
                 validation_passed=not result.is_fraudulent,  # Inverse: fraud detected = validation failed
                 findings=result.anomalies,
-                investigation_summary=result.investigation_summary
+                investigation_summary=result.investigation_summary,
             )
 
-            self._send_log(session_id, f"Task {task['id']} investigation complete. Validation passed: {task_result.validation_passed}")
-            print(f"Task {task['id']} investigation complete. Validation passed: {task_result.validation_passed}")
+            self._send_log(
+                session_id,
+                f"Task {task['id']} investigation complete. Validation passed: {task_result.validation_passed}",
+            )
+            print(
+                f"Task {task['id']} investigation complete. Validation passed: {task_result.validation_passed}"
+            )
 
             # Return state update - this will be accumulated via the 'add' reducer
             return {"task_investigation_results": [task_result]}
 
         except Exception as e:
-            self._send_log(session_id, f"Task {task['id']} investigation failed: {e}")
+            import traceback
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            self._send_log(
+                session_id,
+                f"ERROR: Task {task['id']} investigation failed - {error_msg}",
+            )
+            self._send_log(
+                session_id, f"Task {task['id']}: Marking investigation as failed"
+            )
             print(f"Task {task['id']} investigation failed: {e}")
+            traceback.print_exc()
             # Return error result
             error_result = TaskInvestigationOutput(
-                task_id=task.get('id', 0),
-                task_code=task.get('code', 'Unknown'),
-                task_name=task.get('name', 'Unknown task'),
+                task_id=task.get("id", 0),
+                task_code=task.get("code", "Unknown"),
+                task_name=task.get("name", "Unknown task"),
                 validation_passed=False,
                 findings=[],
-                investigation_summary=f"Investigation failed: {str(e)}"
+                investigation_summary=f"Investigation failed: {error_msg}",
             )
             return {"task_investigation_results": [error_result]}
 
-    def _cleanup_temp_files(self, tender_id: str):
+    def _cleanup_temp_files(self, tender_id: str, session_id: Optional[str] = None):
         """
         Clean up temporary PDF files for this tender.
 
@@ -461,9 +551,12 @@ Please investigate this task systematically and report your findings.
 
         Args:
             tender_id: Tender ID to identify files to clean up
+            session_id: Optional session ID for WebSocket streaming
         """
         if not tender_id:
             return
+
+        self._send_log(session_id, "Cleaning up temporary files...")
 
         try:
             # Get the temporary directory path used by download_buyer_attachment
@@ -493,18 +586,32 @@ Please investigate this task systematically and report your findings.
                     deleted_count += 1
                     deleted_size += file_size
 
-                    logging.debug(f"Deleted temp file: {os.path.basename(file_path)} ({file_size} bytes)")
+                    logging.debug(
+                        f"Deleted temp file: {os.path.basename(file_path)} ({file_size} bytes)"
+                    )
 
                 except Exception as e:
+                    import traceback
                     logging.warning(f"Failed to delete temp file {file_path}: {e}")
+                    traceback.print_exc()
 
             if deleted_count > 0:
-                logging.info(f"Cleanup complete: Deleted {deleted_count} temp files ({deleted_size} bytes)")
-                print(f"Cleanup: Deleted {deleted_count} temp PDF files ({deleted_size / 1024:.1f} KB)")
+                logging.info(
+                    f"Cleanup complete: Deleted {deleted_count} temp files ({deleted_size} bytes)"
+                )
+                cleanup_msg = f"Cleanup complete: Removed {deleted_count} temp files ({deleted_size / 1024:.1f} KB)"
+                self._send_log(session_id, cleanup_msg)
+                print(
+                    f"Cleanup: Deleted {deleted_count} temp PDF files ({deleted_size / 1024:.1f} KB)"
+                )
+            else:
+                self._send_log(session_id, "No temporary files to clean up")
 
         except Exception as e:
             # Don't raise - cleanup failures shouldn't break the workflow
+            import traceback
             logging.warning(f"Temp file cleanup failed: {e}")
+            traceback.print_exc()
             print(f"Warning: Temp file cleanup failed: {e}")
 
     def _aggregate_results(self, state: WorkflowState) -> WorkflowState:
@@ -515,13 +622,19 @@ Please investigate this task systematically and report your findings.
         """
         session_id = state.get("session_id")
 
-        self._send_log(session_id, f"Aggregating {len(state.get('task_investigation_results', []))} task investigation results...")
-        print(f"Aggregating {len(state.get('task_investigation_results', []))} task investigation results...")
+        self._send_log(
+            session_id,
+            f"Aggregating {len(state.get('task_investigation_results', []))} task investigation results...",
+        )
+        print(
+            f"Aggregating {len(state.get('task_investigation_results', []))} task investigation results..."
+        )
 
         # Get all task results
         task_results = state.get("task_investigation_results", [])
 
         # Order by task_id
+        self._send_log(session_id, f"Sorting {len(task_results)} results by task ID...")
         tasks_by_id = sorted(task_results, key=lambda x: x.task_id)
 
         state["tasks_by_id"] = tasks_by_id
@@ -530,6 +643,12 @@ Please investigate this task systematically and report your findings.
         total_investigated = len(task_results)
         failed_validations = sum(1 for r in task_results if not r.validation_passed)
         total_findings = sum(len(r.findings) for r in task_results)
+
+        # Log summary statistics
+        self._send_log(
+            session_id,
+            f"Summary: {failed_validations} failed, {total_investigated - failed_validations} passed, {total_findings} total findings",
+        )
 
         summary_lines = []
         summary_lines.append("=" * 60)
@@ -543,7 +662,9 @@ Please investigate this task systematically and report your findings.
 
         for result in tasks_by_id:
             status = "✓ PASSED" if result.validation_passed else "✗ FAILED"
-            summary_lines.append(f"\nTask {result.task_id} ({result.task_code}): {status}")
+            summary_lines.append(
+                f"\nTask {result.task_id} ({result.task_code}): {status}"
+            )
             summary_lines.append(f"  {result.task_name}")
             if result.findings:
                 summary_lines.append(f"  Findings: {len(result.findings)}")
@@ -552,16 +673,24 @@ Please investigate this task systematically and report your findings.
 
         state["workflow_summary"] = "\n".join(summary_lines)
 
-        self._send_log(session_id, f"Workflow complete. {failed_validations}/{total_investigated} validations failed.")
-        print(f"\nWorkflow complete. {failed_validations}/{total_investigated} validations failed.")
+        self._send_log(
+            session_id,
+            f"Workflow complete. {failed_validations}/{total_investigated} validations failed.",
+        )
+        print(
+            f"\nWorkflow complete. {failed_validations}/{total_investigated} validations failed."
+        )
         print(state["workflow_summary"])
 
         # Clean up temporary PDF files for this tender
         try:
-            self._cleanup_temp_files(state.get("tender_id"))
+            self._cleanup_temp_files(state.get("tender_id"), session_id)
         except Exception as e:
             # Don't let cleanup errors affect the workflow result
+            import traceback
+            self._send_log(session_id, f"Warning: Cleanup failed - {str(e)}")
             logging.warning(f"Cleanup failed but workflow completed successfully: {e}")
+            traceback.print_exc()
 
         return state
 
@@ -585,6 +714,12 @@ Please investigate this task systematically and report your findings.
             - workflow_summary: Summary of the investigation
             - errors: List of errors encountered
         """
+        # Log workflow initialization
+        self._send_log(
+            session_id, f"Starting fraud detection workflow for tender {tender_id}"
+        )
+        self._send_log(session_id, "Initializing workflow state...")
+
         # Initialize state with tender_id and session_id
         initial_state: WorkflowState = {
             "tender_id": tender_id,
@@ -597,12 +732,13 @@ Please investigate this task systematically and report your findings.
             "task_investigation_results": [],
             "tasks_by_id": [],
             "workflow_summary": "",
-            "errors": []
+            "errors": [],
         }
 
         # Run the workflow
         result = self.app.invoke(initial_state)
 
+        self._send_log(session_id, "Workflow execution complete. Returning results...")
         return result
 
     def stream(self, tender_id: str, session_id: Optional[str] = None):
@@ -628,7 +764,7 @@ Please investigate this task systematically and report your findings.
             "task_investigation_results": [],
             "tasks_by_id": [],
             "workflow_summary": "",
-            "errors": []
+            "errors": [],
         }
 
         # Stream the workflow execution
@@ -660,3 +796,4 @@ def detect_fraud(tender_id: str) -> List[TaskInvestigationOutput]:
     workflow = FraudDetectionWorkflow()
     result = workflow.run(tender_id)
     return result["tasks_by_id"]
+

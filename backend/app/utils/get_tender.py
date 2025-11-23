@@ -112,9 +112,12 @@ async def extract_qs_from_tender_page(tender_id: str, client: httpx.AsyncClient)
         match = re.search(r'qs=([^&"]+)', href)
         if not match:
             return None
-        
+
         return match.group(1)
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"Error extracting qs from tender page: {e}")
+        traceback.print_exc()
         return None
 
 
@@ -139,7 +142,10 @@ async def fetch_tender_type(qs: str, client: httpx.AsyncClient) -> Optional[Tend
             return None
         
         return TenderType(description=description, currency=currency)
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"Error fetching tender type: {e}")
+        traceback.print_exc()
         return None
 
 
