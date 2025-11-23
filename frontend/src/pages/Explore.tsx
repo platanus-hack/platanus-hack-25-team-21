@@ -401,15 +401,15 @@ export function Explore() {
               title: "SQL Filters",
               items: [
                 {
-                  name: "Quick Award (<150 days)",
-                  predicate: "date_diff('day', first_activity_date, FechaAdjudicacion) < 150"
+                  name: "Adjudicación Rápida (<30 días)",
+                  predicate: "date_diff('day', first_activity_date, FechaAdjudicacion) < 30"
                 },
                 {
-                  name: "High Daily Award Rate",
+                  name: "Adjudicación Diaria > $1M (desde inicio)",
                   predicate: "MontoLineaAdjudica/date_diff('day', first_activity_date, FechaAdjudicacion)>1000000"
                 },
                 {
-                  name: "High Daily Award Rate (from Publication)",
+                  name: "Adjudicación Diaria > $1M (desde publicación)",
                   predicate: "MontoLineaAdjudica/date_diff('day', FechaPublicacion, FechaAdjudicacion)>1000000"
                 }
               ]
