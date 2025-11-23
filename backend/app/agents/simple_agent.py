@@ -4,15 +4,18 @@ Simple Agent - Procurement fraud investigation agent using LangChain v1 API
 from typing import Dict, Any, List
 
 from pydantic import BaseModel, Field
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 
+from app.config import settings
 from app.prompts import simple_agent
 from app.tools.get_plan import get_plan
 from app.tools.read_buyer_attachments_table import read_buyer_attachments_table
 from app.tools.download_buyer_attachment import download_buyer_attachment
 from app.tools.read_buyer_attachment_doc import read_buyer_attachment_doc
+from app.tools.read_award_result import read_award_result
+from app.tools.read_award_result_attachment_doc import read_award_result_attachment_doc
 
 
 class AnomalyOutput(BaseModel):
@@ -35,6 +38,7 @@ class SimpleAgent:
     - read_buyer_attachments_table: Lists tender documents
     - download_buyer_attachment: Downloads specific attachments
     - read_buyer_attachment_doc: Extracts text from PDF documents
+    - read_award_result: Retrieves award decision and results
 
     Usage:
         agent = SimpleAgent()
@@ -44,7 +48,7 @@ class SimpleAgent:
 
     def __init__(
         self,
-        model_name: str = "claude-haiku-4-5",
+        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -58,9 +62,11 @@ class SimpleAgent:
         self.temperature = temperature
 
         # Initialize model
-        model = ChatAnthropic(
-            model_name=model_name,
+        model = ChatOpenAI(
+            model=model_name,
             temperature=temperature,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.openrouter_api_key,
         )
 
         # Define investigation tools
@@ -68,7 +74,9 @@ class SimpleAgent:
             get_plan,
             read_buyer_attachments_table,
             download_buyer_attachment,
-            read_buyer_attachment_doc
+            read_buyer_attachment_doc,
+            read_award_result,
+            read_award_result_attachment_doc
         ]
 
         # Create investigation agent with structured output for anomaly detection

@@ -4,10 +4,11 @@ Plan Agent - Generates structured task plans from user requests using LangChain 
 from typing import List
 
 from pydantic import BaseModel, Field
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ProviderStrategy
 
+from app.config import settings
 from app.prompts import plan_agent
 
 class PlanOutput(BaseModel):
@@ -32,7 +33,7 @@ class PlanAgent:
 
     def __init__(
         self,
-        model_name: str = "claude-sonnet-4-5",
+        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
         temperature: float = 0.0,
     ):
         """
@@ -46,9 +47,11 @@ class PlanAgent:
         self.temperature = temperature
 
         # Initialize model
-        model = ChatAnthropic(
+        model = ChatOpenAI(
             model=model_name,
             temperature=temperature,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.openrouter_api_key,
         )
 
         # Create agent with structured output using ProviderStrategy

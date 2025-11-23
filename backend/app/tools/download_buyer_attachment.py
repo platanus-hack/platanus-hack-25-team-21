@@ -98,8 +98,11 @@ def download_buyer_attachment(tender_id: str, row_id: int) -> dict:
                     f"- end_page: {total_pages} (or your desired end page)\n"
                     f"Example: To read first 3 pages, use start_page=1 and end_page=3"
                 )
-            except Exception:
+            except Exception as e:
                 # If we can't read PDF, just skip page count
+                import traceback
+                print(f"Error reading PDF metadata: {e}")
+                traceback.print_exc()
                 read_instructions = (
                     f"To read this PDF, use read_buyer_attachment_doc with:\n"
                     f"- tender_id: '{tender_id}'\n"
@@ -116,6 +119,9 @@ def download_buyer_attachment(tender_id: str, row_id: int) -> dict:
         }
 
     except Exception as e:
+        import traceback
+        print(f"Error downloading buyer attachment: {e}")
+        traceback.print_exc()
         return {
             "file_path": None,
             "file_name": None,

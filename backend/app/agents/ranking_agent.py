@@ -3,16 +3,18 @@ Ranking Agent - Ranks procurement tenders by fraud risk indicators
 """
 from typing import Dict, Any
 
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 
+from app.config import settings
 from app.prompts import ranking_agent
-from app.schemas import RankingInput, RankingOutput
-from app.tools.get_plan import get_plan
+from app.schemas import RankingInput, RankingOutput, TaskRankingOutput
 from app.tools.read_buyer_attachments_table import read_buyer_attachments_table
 from app.tools.download_buyer_attachment import download_buyer_attachment
 from app.tools.read_buyer_attachment_doc import read_buyer_attachment_doc
+from app.tools.read_award_result import read_award_result
+from app.tools.read_award_result_attachment_doc import read_award_result_attachment_doc
 
 
 class RankingAgent:
@@ -23,7 +25,6 @@ class RankingAgent:
     a ranked list of the top 5 most suspicious cases for deep investigation.
 
     Available tools:
-    - get_plan: Creates risk assessment plans
     - read_buyer_attachments_table: Lists tender documents
     - download_buyer_attachment: Downloads specific attachments
     - read_buyer_attachment_doc: Analyzes document content
@@ -44,7 +45,7 @@ class RankingAgent:
 
     def __init__(
         self,
-        model_name: str = "claude-haiku-4-5",
+        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -58,17 +59,20 @@ class RankingAgent:
         self.temperature = temperature
 
         # Initialize model
-        model = ChatAnthropic(
-            model_name=model_name,
+        model = ChatOpenAI(
+            model=model_name,
             temperature=temperature,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.openrouter_api_key,
         )
 
         # Define tools for risk assessment
         tools = [
-            get_plan,
             read_buyer_attachments_table,
             download_buyer_attachment,
-            read_buyer_attachment_doc
+            read_buyer_attachment_doc,
+            read_award_result,
+            read_award_result_attachment_doc
         ]
 
         # Create ranking agent with structured output
@@ -76,10 +80,10 @@ class RankingAgent:
             model=model,
             tools=tools,
             system_prompt=ranking_agent.SYS_PROMPT,
-            response_format=ToolStrategy(RankingOutput)
+            response_format=ToolStrategy(TaskRankingOutput)
         )
 
-    def run(self, input_data: RankingInput) -> RankingOutput:
+    def run(self, input_data: RankingInput) -> TaskRankingOutput:
         """
         Analyze tender context and rank items by fraud risk.
 
