@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime
 from app.utils.get_tender import TenderResponse
 from app.schemas import RankingInput
-from app.tools.read_buyer_attachments_table import read_buyer_attachments_table
+from app.tools.read_supplier_attachments import read_buyer_attachments_table as _read_buyer_attachments_table
 from app.utils.websocket_manager import manager
 # Import underlying functions instead of LangChain tools
 from app.tools.read_supplier_attachments import (
@@ -159,7 +159,7 @@ def fetch_and_extract_documents(
 
     try:
         # Get list of attachments
-        attachments = read_buyer_attachments_table(tender_id)
+        attachments = _read_buyer_attachments_table(tender_id)
 
         # Handle case where attachments is None or not a list
         if not attachments:
