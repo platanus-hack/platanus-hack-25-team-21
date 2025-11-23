@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { EmbeddingAtlas } from "embedding-atlas/react"
 import { Coordinator, wasmConnector } from '@uwdata/vgplot'
@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext'
 export function Explore() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const containerRef = useRef<HTMLDivElement>(null)
   const [coordinator, setCoordinator] = useState<Coordinator | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -27,48 +28,74 @@ export function Explore() {
         // Get the DuckDB database instance
         const db = await connector.getDuckDB()
 
-        // Download the parquet file from remote URL
-        const response = await fetch('https://r2.themis.lat/all_months_tsne_gpu.parquet')
-        if (!response.ok) {
-          throw new Error(`Failed to download: ${response.statusText}`)
-        }
+        const fileUrl = 'https://r2.themis.lat/all_months_tsne_gpu.parquet'
+        const cacheName = 'parquet-files-cache'
 
-        const contentLength = response.headers.get('content-length')
-        const total = contentLength ? parseInt(contentLength, 10) : 0
+        // Try to get the file from cache first
+        const cache = await caches.open(cacheName)
+        let cachedResponse = await cache.match(fileUrl)
 
-        const reader = response.body?.getReader()
-        if (!reader) {
-          throw new Error('Failed to get response reader')
-        }
+        let allChunks: Uint8Array
 
-        const chunks: Uint8Array[] = []
-        let receivedLength = 0
-
-        setDownloadStatus('Descargando datos...')
-
-        while (true) {
-          const { done, value } = await reader.read()
-
-          if (done) break
-
-          chunks.push(value)
-          receivedLength += value.length
-
-          if (total > 0) {
-            const progress = Math.round((receivedLength / total) * 100)
-            setDownloadProgress(progress)
-            setDownloadStatus(`Descargando datos... ${progress}%`)
+        if (cachedResponse) {
+          // File found in cache, use it
+          setDownloadStatus('Cargando desde caché...')
+          const arrayBuffer = await cachedResponse.arrayBuffer()
+          allChunks = new Uint8Array(arrayBuffer)
+          setDownloadProgress(100)
+        } else {
+          // File not in cache, download it
+          const response = await fetch(fileUrl)
+          if (!response.ok) {
+            throw new Error(`Failed to download: ${response.statusText}`)
           }
-        }
 
-        setDownloadStatus('Procesando datos...')
+          const contentLength = response.headers.get('content-length')
+          const total = contentLength ? parseInt(contentLength, 10) : 0
 
-        // Combine chunks into a single Uint8Array
-        const allChunks = new Uint8Array(receivedLength)
-        let position = 0
-        for (const chunk of chunks) {
-          allChunks.set(chunk, position)
-          position += chunk.length
+          const reader = response.body?.getReader()
+          if (!reader) {
+            throw new Error('Failed to get response reader')
+          }
+
+          const chunks: Uint8Array[] = []
+          let receivedLength = 0
+
+          setDownloadStatus('Descargando datos...')
+
+          while (true) {
+            const { done, value } = await reader.read()
+
+            if (done) break
+
+            chunks.push(value)
+            receivedLength += value.length
+
+            if (total > 0) {
+              const progress = Math.round((receivedLength / total) * 100)
+              setDownloadProgress(progress)
+              setDownloadStatus(`Descargando datos... ${progress}%`)
+            }
+          }
+
+          setDownloadStatus('Procesando datos...')
+
+          // Combine chunks into a single Uint8Array
+          allChunks = new Uint8Array(receivedLength)
+          let position = 0
+          for (const chunk of chunks) {
+            allChunks.set(chunk, position)
+            position += chunk.length
+          }
+
+          // Store in cache for next time
+          const responseToCache = new Response(allChunks, {
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'Content-Length': allChunks.length.toString()
+            }
+          })
+          await cache.put(fileUrl, responseToCache)
         }
 
         // Register the file with DuckDB's virtual filesystem
@@ -131,6 +158,63 @@ export function Explore() {
     init()
   }, [])
 
+  // DOM-based click detection for individual nodes
+  useEffect(() => {
+    if (!coordinator || !containerRef.current) return
+
+    const handleClick = async (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+
+      // Check if a circle (node) was clicked
+      if (target.tagName.toLowerCase() === 'circle') {
+        console.log('🔵 Circle clicked!')
+
+        // Small delay to let the DOM update
+        setTimeout(() => {
+          // Find the div with the title attribute containing the CodigoExterno
+          const titleDiv = containerRef.current?.querySelector('.text-ellipsis.whitespace-nowrap.overflow-hidden.max-w-72[title]')
+
+          if (titleDiv) {
+            const codigoExterno = titleDiv.getAttribute('title')
+            console.log('📋 Extracted CodigoExterno:', codigoExterno)
+
+            if (codigoExterno) {
+              // Validate format (alphanumeric, hyphens, underscores)
+              const isValidFormat = /^[\w-]+$/.test(codigoExterno)
+              console.log('✓ Valid format:', isValidFormat)
+
+              if (isValidFormat && coordinator) {
+                // Escape single quotes to prevent SQL injection
+                const escapedCodigo = codigoExterno.replace(/'/g, "''")
+
+                coordinator.query(
+                  `SELECT * FROM data WHERE CodigoExterno = '${escapedCodigo}'`
+                ).then(result => {
+                  const dataArray = result ? Array.from(result) : null
+                  console.log('📊 Query result:', dataArray)
+                  if (dataArray && dataArray.length > 0) {
+                    setSelectedData(dataArray)
+                  }
+                }).catch(err => {
+                  console.error('Failed to query selected node:', err)
+                })
+              }
+            }
+          } else {
+            console.log('⚠️ Title div not found')
+          }
+        }, 100) // Small delay to ensure DOM has updated
+      }
+    }
+
+    const container = containerRef.current
+    container.addEventListener('click', handleClick)
+
+    return () => {
+      container.removeEventListener('click', handleClick)
+    }
+  }, [coordinator])
+
   if (loading) {
     return (
       <div className="app loading-screen">
@@ -174,7 +258,7 @@ export function Explore() {
   }
 
   return (
-    <div className="app">
+    <div className="app" ref={containerRef}>
       {selectedData && selectedData.length === 1 && (
         <div style={{
           position: 'fixed',
@@ -296,37 +380,6 @@ export function Explore() {
                 }
               ]
             }
-          }
-        }}
-        onStateChange={async (state) => {
-          console.log("========== STATE CHANGE ==========")
-          console.log("Full state:", state)
-          console.log("Selection predicate:", state.predicate)
-          console.log("Predicate type:", typeof state.predicate)
-          console.log("==================================")
-
-          // Query selected data if there's a selection
-          if (state.predicate && coordinator) {
-            try {
-              console.log("Querying with predicate:", state.predicate)
-              const result = await coordinator.query(
-                `SELECT * FROM data WHERE ${state.predicate}`
-              )
-              console.log("Query result:", result)
-              console.log("Result type:", typeof result)
-
-              const dataArray = result ? Array.from(result) : null
-              console.log("Data array:", dataArray)
-              console.log("Data array length:", dataArray?.length)
-
-              setSelectedData(dataArray)
-            } catch (err) {
-              console.error("Failed to query selection:", err)
-              setSelectedData(null)
-            }
-          } else {
-            console.log("No predicate, clearing selection")
-            setSelectedData(null)
           }
         }}
         chartTheme={{
