@@ -97,9 +97,11 @@ class FraudDetectionWorkflow:
 
     def __init__(
         self,
-        ranking_model: str = "google/gemini-2.5-flash-lite-preview-09-2025",
-        detection_model: str = "google/gemini-2.5-flash-lite-preview-09-2025",
+        ranking_model: str = "google/gemini-2.5-flash-lite",
+        detection_model: str = "google/gemini-2.5-flash-lite",
         temperature: float = 0.7,
+        max_iterations: int = None,
+        max_execution_time: int = None,
     ):
         """
         Initialize the workflow with agent configurations.
@@ -108,12 +110,16 @@ class FraudDetectionWorkflow:
             ranking_model: Model for ranking agent
             detection_model: Model for detection agents
             temperature: Temperature for all agents
+            max_iterations: Maximum tool calls per investigation (default from config)
+            max_execution_time: Maximum execution time per investigation in seconds (default from config)
         """
         self.ranking_agent = RankingAgent(
             model_name=ranking_model, temperature=temperature
         )
         self.detection_model = detection_model
         self.temperature = temperature
+        self.max_iterations = max_iterations
+        self.max_execution_time = max_execution_time
 
         # Build the workflow graph
         self.graph = self._build_graph()
@@ -337,7 +343,8 @@ Return ONLY the IDs of feasible tasks. Focus on filtering OUT impossible tasks.
             )
 
             # Filter tasks from investigation_tasks using the feasible IDs
-            feasible_ids = classification_result.feasible_task_ids
+            # Limit to top 5 tasks to avoid rate limits
+            feasible_ids = classification_result.feasible_task_ids[:5]
             state["ranked_tasks"] = [
                 task
                 for task in state["investigation_tasks"]
@@ -447,7 +454,10 @@ Return ONLY the IDs of feasible tasks. Focus on filtering OUT impossible tasks.
         try:
             # Create fraud detection agent
             agent = FraudDetectionAgent(
-                model_name=self.detection_model, temperature=self.temperature
+                model_name=self.detection_model,
+                temperature=self.temperature,
+                max_iterations=self.max_iterations,
+                max_execution_time=self.max_execution_time,
             )
 
             # Prepare message for investigation
@@ -683,7 +693,7 @@ Please investigate this task systematically and report your findings.
 
         try:
             summary_agent = SummaryAgent(
-                model_name=self.model_name,
+                model_name=self.detection_model,
                 temperature=0.3,  # Lower temperature for more focused analysis
             )
             summary_output: SummaryOutput = summary_agent.run(

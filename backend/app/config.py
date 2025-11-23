@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     websocket_replay_speed: float = 4.0
 
+    # Fraud Detection Agent limits
+    fraud_detection_max_iterations: int = 15
+    fraud_detection_max_execution_time: int = 300  # seconds (5 minutes)
+
     class Config:
         env_file = ".env"
         extra = "ignore"  # Ignore extra env variables not defined in Settings

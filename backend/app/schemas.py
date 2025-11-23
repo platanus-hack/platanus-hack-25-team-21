@@ -85,6 +85,8 @@ class FraudDetectionOutput(BaseModel):
     is_fraudulent: bool = Field(description="Whether fraud indicators were found")
     anomalies: List[Anomaly] = Field(description="List of detected anomalies")
     investigation_summary: str = Field(description="Summary of the investigation")
+    iteration_limit_reached: bool = Field(default=False, description="Whether max iterations limit was reached")
+    total_iterations: int = Field(default=0, description="Total number of tool calls made during investigation")
 
 
 class WorkflowState(BaseModel):

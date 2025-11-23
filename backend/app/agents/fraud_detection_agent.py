@@ -59,6 +59,8 @@ class FraudDetectionAgent:
         self,
         model_name: str = "google/gemini-2.5-flash-lite-preview-09-2025",
         temperature: float = 0.7,
+        max_iterations: int = None,
+        max_execution_time: int = None,
     ):
         """
         Initialize the Fraud Detection Agent.
@@ -66,9 +68,13 @@ class FraudDetectionAgent:
         Args:
             model_name: Anthropic model to use
             temperature: Temperature for model responses (0.0-1.0)
+            max_iterations: Maximum number of tool calls allowed (default from config)
+            max_execution_time: Maximum execution time in seconds (default from config)
         """
         self.model_name = model_name
         self.temperature = temperature
+        self.max_iterations = max_iterations or settings.fraud_detection_max_iterations
+        self.max_execution_time = max_execution_time or settings.fraud_detection_max_execution_time
 
         # Initialize model
         model = ChatOpenAI(
@@ -162,18 +168,57 @@ Investigate systematically and return detailed anomalies with evidence.
         if task_info:
             state["task_info"] = task_info
 
-        result = self.agent.invoke(state)
+        # Configure agent with iteration limits
+        config = {
+            "recursion_limit": self.max_iterations,
+            "max_execution_time": self.max_execution_time,
+        }
 
-        # Return the structured response
-        if "structured_response" not in result:
-            # Debug: Print available keys to understand the issue
-            print(f"WARNING: structured_response not found in result. Available keys: {result.keys()}")
-            # Raise a more informative error
-            raise ValueError(
-                f"Agent did not return structured_response. Available keys: {list(result.keys())}. "
-                f"This may indicate the agent failed to complete successfully."
-            )
-        return result["structured_response"]
+        try:
+            result = self.agent.invoke(state, config=config)
+
+            # Return the structured response
+            if "structured_response" not in result:
+                # Debug: Print available keys to understand the issue
+                print(f"WARNING: structured_response not found in result. Available keys: {result.keys()}")
+                # Raise a more informative error
+                raise ValueError(
+                    f"Agent did not return structured_response. Available keys: {list(result.keys())}. "
+                    f"This may indicate the agent failed to complete successfully."
+                )
+
+            # Add iteration tracking to the response
+            output = result["structured_response"]
+            if hasattr(output, "total_iterations"):
+                # Count actual iterations from messages
+                output.total_iterations = len([m for m in result.get("messages", []) if m.get("type") == "tool"])
+
+            return output
+
+        except Exception as e:
+            # Check if this is a recursion limit error
+            error_str = str(e).lower()
+            is_limit_error = "recursion" in error_str or "iteration" in error_str or "limit" in error_str
+
+            if is_limit_error:
+                print(f"⚠️  Investigation hit iteration limit ({self.max_iterations}) for tender {input_data.tender_id}")
+
+                # Try to extract partial results from the agent state
+                partial_summary = f"Investigation incomplete - reached maximum iteration limit ({self.max_iterations} tool calls). "
+                partial_summary += "Results shown are based on partial analysis. Consider reviewing this tender manually."
+
+                # Return partial result with warning
+                return FraudDetectionOutput(
+                    tender_id=input_data.tender_id,
+                    is_fraudulent=False,  # Conservative: don't flag as fraud if investigation incomplete
+                    anomalies=[],  # No anomalies since investigation incomplete
+                    investigation_summary=partial_summary,
+                    iteration_limit_reached=True,
+                    total_iterations=self.max_iterations,
+                )
+            else:
+                # Re-raise other errors
+                raise
 
     def _format_context(self, context: Dict[str, Any]) -> str:
         """

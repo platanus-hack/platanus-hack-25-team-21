@@ -49,7 +49,7 @@ class SummaryAgent:
 
     def __init__(
         self,
-        model_name: str = "openai/gpt-oss-120b",
+        model_name: str = "google/gemini-2.5-flash-lite",
         temperature: float = 0.3,
     ):
         """
