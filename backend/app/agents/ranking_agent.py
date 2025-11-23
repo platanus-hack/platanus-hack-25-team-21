@@ -1,6 +1,7 @@
 """
 Ranking Agent - Ranks procurement tenders by fraud risk indicators
 """
+
 from typing import Dict, Any
 
 from langchain_openai import ChatOpenAI
@@ -43,7 +44,7 @@ class RankingAgent:
 
     def __init__(
         self,
-        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
+        model_name: str = "google/gemini-2.5-flash-lite-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -69,7 +70,7 @@ class RankingAgent:
             read_buyer_attachments_table,
             read_buyer_attachment_doc,
             read_award_result,
-            read_award_result_attachment_doc
+            read_award_result_attachment_doc,
         ]
 
         # Create ranking agent with structured output
@@ -77,7 +78,7 @@ class RankingAgent:
             model=model,
             tools=tools,
             system_prompt=ranking_agent.SYS_PROMPT,
-            response_format=ToolStrategy(TaskRankingOutput)
+            response_format=ToolStrategy(TaskRankingOutput),
         )
 
     def run(self, input_data: RankingInput) -> TaskRankingOutput:
@@ -129,9 +130,7 @@ Please analyze this tender for risk indicators and return a ranking of items to 
 Focus on identifying patterns that suggest potential fraud or corruption.
 """
 
-        result = self.agent.invoke({
-            "messages": [{"role": "user", "content": message}]
-        })
+        result = self.agent.invoke({"messages": [{"role": "user", "content": message}]})
 
         # Return the structured response
         return result["structured_response"]
@@ -168,8 +167,6 @@ Additional Context: {tender.additional_context}
 Analyze ALL tenders above and return a single ranking of the TOP 5 items with highest fraud risk.
 The ranking should compare risk across all provided tenders, not just within each tender."""
 
-        result = self.agent.invoke({
-            "messages": [{"role": "user", "content": message}]
-        })
+        result = self.agent.invoke({"messages": [{"role": "user", "content": message}]})
 
         return result["structured_response"]

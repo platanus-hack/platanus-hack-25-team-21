@@ -5,9 +5,10 @@ Acepta un tender_id como argumento de línea de comandos.
 
 Uso:
     python test_fraud_detection.py --tender-id 4831-19-LE20
-    python test_fraud_detection.py -t 4831-19-LE20 --model google/gemini-2.5-flash-preview-09-2025
+    python test_fraud_detection.py -t 4831-19-LE20 --model google/gemini-2.5-flash-lite-preview-09-2025
     python test_fraud_detection.py -t 4831-19-LE20 --verbose
 """
+
 import argparse
 import sys
 import os
@@ -16,6 +17,7 @@ import json
 
 # Load environment variables
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from app.workflow import FraudDetectionWorkflow
@@ -38,12 +40,20 @@ def format_task_result(task_result, verbose=False):
     status_emoji = "✅" if task_result.validation_passed else "❌"
 
     print(f"\n{status_emoji} Tarea: {task_result.task_code} - {task_result.task_name}")
-    print(f"   Estado: {'PASÓ validación' if task_result.validation_passed else 'FALLÓ validación'}")
+    print(
+        f"   Estado: {'PASÓ validación' if task_result.validation_passed else 'FALLÓ validación'}"
+    )
 
     if task_result.findings:
         print(f"\n   📋 Hallazgos encontrados: {len(task_result.findings)}")
         for i, finding in enumerate(task_result.findings, 1):
-            confidence_emoji = "🔴" if finding.confidence >= 0.7 else "🟡" if finding.confidence >= 0.5 else "⚪"
+            confidence_emoji = (
+                "🔴"
+                if finding.confidence >= 0.7
+                else "🟡"
+                if finding.confidence >= 0.5
+                else "⚪"
+            )
             print(f"\n   {i}. {confidence_emoji} {finding.anomaly_name}")
             print(f"      Confianza: {finding.confidence:.2f}")
 
@@ -58,7 +68,9 @@ def format_task_result(task_result, verbose=False):
                         print(f"        ... y {len(finding.evidence) - 3} más")
 
                 if finding.affected_documents:
-                    print(f"      Documentos afectados: {', '.join(finding.affected_documents)}")
+                    print(
+                        f"      Documentos afectados: {', '.join(finding.affected_documents)}"
+                    )
     else:
         print(f"   ℹ️  No se encontraron hallazgos")
 
@@ -74,40 +86,41 @@ def main():
 Ejemplos de uso:
   %(prog)s --tender-id 4831-19-LE20
   %(prog)s -t 4831-19-LE20 --verbose
-  %(prog)s -t 4831-19-LE20 --model google/gemini-2.5-flash-preview-09-2025
+  %(prog)s -t 4831-19-LE20 --model google/gemini-2.5-flash-lite-preview-09-2025
   %(prog)s -t 4831-19-LE20 --temperature 0.5 -v
-        """
+        """,
     )
 
     parser.add_argument(
-        "-t", "--tender-id",
+        "-t",
+        "--tender-id",
         required=True,
-        help="ID de la licitación a investigar (ej: 4831-19-LE20)"
+        help="ID de la licitación a investigar (ej: 4831-19-LE20)",
     )
 
     parser.add_argument(
-        "-m", "--model",
-        default="google/gemini-2.5-flash-preview-09-2025",
-        help="Modelo de IA a usar (default: google/gemini-2.5-flash-preview-09-2025)"
+        "-m",
+        "--model",
+        default="google/gemini-2.5-flash-lite-preview-09-2025",
+        help="Modelo de IA a usar (default: google/gemini-2.5-flash-lite-preview-09-2025)",
     )
 
     parser.add_argument(
         "--temperature",
         type=float,
         default=0.7,
-        help="Temperatura del modelo (0.0-1.0, default: 0.7)"
+        help="Temperatura del modelo (0.0-1.0, default: 0.7)",
     )
 
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
-        help="Mostrar información detallada de los hallazgos"
+        help="Mostrar información detallada de los hallazgos",
     )
 
     parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Mostrar resultados en formato JSON"
+        "--json", action="store_true", help="Mostrar resultados en formato JSON"
     )
 
     args = parser.parse_args()
@@ -135,7 +148,7 @@ Ejemplos de uso:
         workflow = FraudDetectionWorkflow(
             ranking_model=args.model,
             detection_model=args.model,
-            temperature=args.temperature
+            temperature=args.temperature,
         )
 
         # Run workflow
@@ -156,8 +169,12 @@ Ejemplos de uso:
                 "tender_id": args.tender_id,
                 "workflow_summary": result.get("workflow_summary", ""),
                 "tasks_investigated": len(result.get("tasks_by_id", [])),
-                "tasks_failed": sum(1 for t in result.get("tasks_by_id", []) if not t.validation_passed),
-                "total_findings": sum(len(t.findings) for t in result.get("tasks_by_id", [])),
+                "tasks_failed": sum(
+                    1 for t in result.get("tasks_by_id", []) if not t.validation_passed
+                ),
+                "total_findings": sum(
+                    len(t.findings) for t in result.get("tasks_by_id", [])
+                ),
                 "errors": result.get("errors", []),
                 "tasks": [
                     {
@@ -171,13 +188,13 @@ Ejemplos de uso:
                                 "description": f.description,
                                 "confidence": f.confidence,
                                 "evidence": f.evidence,
-                                "affected_documents": f.affected_documents
+                                "affected_documents": f.affected_documents,
                             }
                             for f in t.findings
-                        ]
+                        ],
                     }
                     for t in result.get("tasks_by_id", [])
-                ]
+                ],
             }
             print(json.dumps(json_result, indent=2, ensure_ascii=False))
         else:
@@ -195,8 +212,12 @@ Ejemplos de uso:
                 print(f"   • Nombre: {tender.name}")
                 print(f"   • Comprador: {tender.tenderPurchaseData.organization.name}")
                 print(f"   • Código: {tender.tenderId}")
-                print(f"   • Fecha publicación: {tender.TenderDate.publish.strftime('%Y-%m-%d')}")
-                print(f"   • Fecha cierre: {tender.TenderDate.close.strftime('%Y-%m-%d')}")
+                print(
+                    f"   • Fecha publicación: {tender.TenderDate.publish.strftime('%Y-%m-%d')}"
+                )
+                print(
+                    f"   • Fecha cierre: {tender.TenderDate.close.strftime('%Y-%m-%d')}"
+                )
                 if tender.type:
                     print(f"   • Tipo: {tender.type.description}")
                     print(f"   • Moneda: {tender.type.currency}")
@@ -225,19 +246,21 @@ Ejemplos de uso:
 
             # Footer
             print_separator()
-            print(f"✅ Investigación completada - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(
+                f"✅ Investigación completada - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             print_separator()
 
             # Summary stats
             if tasks_by_id:
                 high_confidence_findings = sum(
-                    1 for t in tasks_by_id
-                    for f in t.findings
-                    if f.confidence >= 0.7
+                    1 for t in tasks_by_id for f in t.findings if f.confidence >= 0.7
                 )
 
                 if high_confidence_findings > 0:
-                    print(f"\n🚨 Hallazgos de alta confianza (≥0.7): {high_confidence_findings}")
+                    print(
+                        f"\n🚨 Hallazgos de alta confianza (≥0.7): {high_confidence_findings}"
+                    )
                 else:
                     print(f"\n✅ No se encontraron hallazgos de alta confianza")
 
@@ -250,12 +273,13 @@ Ejemplos de uso:
             error_result = {
                 "error": str(e),
                 "tender_id": args.tender_id,
-                "success": False
+                "success": False,
             }
             print(json.dumps(error_result, indent=2, ensure_ascii=False))
         else:
             print(f"\n❌ Error durante la ejecución: {e}")
             import traceback
+
             traceback.print_exc()
         sys.exit(1)
 

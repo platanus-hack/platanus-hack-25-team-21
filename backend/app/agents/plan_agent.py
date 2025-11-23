@@ -1,6 +1,7 @@
 """
 Plan Agent - Generates structured task plans from user requests using LangChain v1 API
 """
+
 from typing import List
 
 from pydantic import BaseModel, Field
@@ -11,9 +12,11 @@ from langchain.agents.structured_output import ProviderStrategy
 from app.config import settings
 from app.prompts import plan_agent
 
+
 class PlanOutput(BaseModel):
     """Structured output for plan generation"""
-    steps: List[str] =  Field(
+
+    steps: List[str] = Field(
         description="Detailed instruction for the agent to execute this task step by step"
     )
 
@@ -33,7 +36,7 @@ class PlanAgent:
 
     def __init__(
         self,
-        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
+        model_name: str = "google/gemini-2.5-flash-lite-preview-09-2025",
         temperature: float = 0.0,
     ):
         """
@@ -60,7 +63,7 @@ class PlanAgent:
             model=model,
             tools=[],  # No tools needed for planning
             system_prompt=plan_agent.SYS_PROMPT,
-            response_format=ProviderStrategy(PlanOutput)
+            response_format=ProviderStrategy(PlanOutput),
         )
 
     def run(self, message: str) -> PlanOutput:
@@ -74,9 +77,7 @@ class PlanAgent:
             PlanOutput: Structured plan with list of tasks
 
         """
-        result = self.agent.invoke({
-            "messages": [{"role": "user", "content": message}]
-        })
+        result = self.agent.invoke({"messages": [{"role": "user", "content": message}]})
 
         # The structured response is available in the "structured_response" key
         return result["structured_response"]

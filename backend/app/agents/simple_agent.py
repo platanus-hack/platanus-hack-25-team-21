@@ -1,6 +1,7 @@
 """
 Simple Agent - Procurement fraud investigation agent using LangChain v1 API
 """
+
 from typing import Dict, Any, List
 
 from pydantic import BaseModel, Field
@@ -19,6 +20,7 @@ from app.tools.read_award_result_attachment_doc import read_award_result_attachm
 
 class AnomalyOutput(BaseModel):
     """Structured output for anomaly detection in procurement analysis"""
+
     anomalies: List[str] = Field(
         description="List of detected anomalies or red flags in the procurement process"
     )
@@ -46,7 +48,7 @@ class SimpleAgent:
 
     def __init__(
         self,
-        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
+        model_name: str = "google/gemini-2.5-flash-lite-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -73,7 +75,7 @@ class SimpleAgent:
             read_buyer_attachments_table,
             read_buyer_attachment_doc,
             read_award_result,
-            read_award_result_attachment_doc
+            read_award_result_attachment_doc,
         ]
 
         # Create investigation agent with structured output for anomaly detection
@@ -81,7 +83,7 @@ class SimpleAgent:
             model=model,
             tools=tools,
             system_prompt=simple_agent.SYS_PROMPT,
-            response_format=ToolStrategy(AnomalyOutput)
+            response_format=ToolStrategy(AnomalyOutput),
         )
 
     def run(self, message: str) -> AnomalyOutput:
@@ -109,9 +111,7 @@ class SimpleAgent:
              'Publication period of 3 days violates legal minimum of 20 days for LR category',
              'Evaluation criteria awards 50% to proprietary certification only available from one supplier']
         """
-        result = self.agent.invoke({
-            "messages": [{"role": "user", "content": message}]
-        })
+        result = self.agent.invoke({"messages": [{"role": "user", "content": message}]})
 
         # Return the structured response
         return result["structured_response"]

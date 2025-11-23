@@ -21,4 +21,6 @@ dependencies = [
     "sqlalchemy>=2.0.44",
     "uvicorn[standard]>=0.38.0",
     "websockets>=15.0.1",
+    "python-docx>=1.2.0",
+    "puremagic>=1.30",
 ]

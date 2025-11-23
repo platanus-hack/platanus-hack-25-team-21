@@ -501,3 +501,37 @@
   83.33%{transform: translate( 37.5%) rotate(270deg)}
   100%  {transform: translate( 37.5%) rotate(360deg)}
 }
+
+/* Task Cards Section */
+.tasks-section {
+  max-width: 1400px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+.tasks-section-title {
+  font-size: 1.5rem;
+  font-weight: 300;
+  color: var(--text-primary);
+  margin: 0 0 24px 0;
+  letter-spacing: 0.1em;
+}
+
+.tasks-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+@media (max-width: 1200px) {
+  .tasks-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .tasks-grid {
+    grid-template-columns: 1fr;
+  }
+}

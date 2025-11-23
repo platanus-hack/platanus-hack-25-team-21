@@ -2,14 +2,33 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState, useRef } from 'react'
 import './Detail.css'
 import { endpoints } from '../config/api'
+import { TaskCard } from '../components/TaskCard'
 
 interface LogEvent {
   type: 'log' | 'result' | 'error'
   message: string
   timestamp: string
+  task_code?: string
   tasks_by_id?: any[]
   workflow_summary?: string
   status?: string
+}
+
+interface TaskInfo {
+  code: string
+  id: number
+  name: string
+  severity: string
+  events: LogEvent[]
+  result?: {
+    task_id: number
+    task_code: string
+    task_name: string
+    validation_passed: boolean
+    findings_count: number
+    investigation_summary?: string
+  }
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
 }
 
 export function Detail() {
@@ -17,6 +36,7 @@ export function Detail() {
   const navigate = useNavigate()
   const [nodeData, setNodeData] = useState<any>(null)
   const [logs, setLogs] = useState<LogEvent[]>([])
+  const [tasks, setTasks] = useState<Map<string, TaskInfo>>(new Map())
   const [isInvestigating, setIsInvestigating] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
@@ -61,6 +81,91 @@ export function Detail() {
 
       setLogs((prev) => [...prev, log])
 
+      // Handle task-related events
+      if (log.task_code) {
+        setTasks((prevTasks) => {
+          const newTasks = new Map(prevTasks)
+          const taskCode = log.task_code!
+          
+          // Get or create task entry
+          let taskInfo = newTasks.get(taskCode)
+          if (!taskInfo) {
+            // Create new task entry - we'll get name and severity from result events
+            taskInfo = {
+              code: taskCode,
+              id: 0, // Will be updated from result
+              name: `Task ${taskCode}`, // Will be updated from result
+              severity: 'Unknown', // Will be updated from result
+              events: [],
+              status: 'pending',
+            }
+            newTasks.set(taskCode, taskInfo)
+          }
+
+          // Add event to task
+          taskInfo.events = [...taskInfo.events, log]
+
+          // Update status based on event type
+          if (log.type === 'log') {
+            if (taskInfo.status === 'pending') {
+              taskInfo.status = 'in_progress'
+            }
+          } else if (log.type === 'result') {
+            taskInfo.status = 'completed'
+          } else if (log.type === 'error') {
+            taskInfo.status = 'failed'
+          }
+
+          return newTasks
+        })
+      }
+
+      // Handle result events with tasks_by_id to update task results
+      if (log.type === 'result' && log.tasks_by_id) {
+        setTasks((prevTasks) => {
+          const newTasks = new Map(prevTasks)
+          
+          log.tasks_by_id.forEach((taskResult: any) => {
+            const taskCode = taskResult.task_code
+            const taskInfo = newTasks.get(taskCode)
+            
+            if (taskInfo) {
+              taskInfo.id = taskResult.task_id
+              taskInfo.name = taskResult.task_name
+              taskInfo.result = {
+                task_id: taskResult.task_id,
+                task_code: taskResult.task_code,
+                task_name: taskResult.task_name,
+                validation_passed: taskResult.validation_passed,
+                findings_count: taskResult.findings_count,
+                investigation_summary: taskResult.investigation_summary,
+              }
+              taskInfo.status = taskResult.validation_passed ? 'completed' : 'failed'
+            } else {
+              // Create task entry from result if it doesn't exist
+              newTasks.set(taskCode, {
+                code: taskCode,
+                id: taskResult.task_id,
+                name: taskResult.task_name,
+                severity: 'Unknown', // Not available in result
+                events: [],
+                result: {
+                  task_id: taskResult.task_id,
+                  task_code: taskResult.task_code,
+                  task_name: taskResult.task_name,
+                  validation_passed: taskResult.validation_passed,
+                  findings_count: taskResult.findings_count,
+                  investigation_summary: taskResult.investigation_summary,
+                },
+                status: taskResult.validation_passed ? 'completed' : 'failed',
+              })
+            }
+          })
+          
+          return newTasks
+        })
+      }
+
       // If we receive a result or error, stop investigating
       if (log.type === 'result' || log.type === 'error') {
         setIsInvestigating(false)
@@ -81,6 +186,7 @@ export function Detail() {
   const startInvestigation = async () => {
     setIsInvestigating(true)
     setLogs([])
+    setTasks(new Map())
 
     try {
       const response = await fetch(endpoints.investigate, {
@@ -262,6 +368,28 @@ export function Detail() {
           <button onClick={startInvestigation} className="start-button">
             Iniciar Investigación
           </button>
+        </div>
+      )}
+
+      {tasks.size > 0 && (
+        <div className="tasks-section">
+          <h2 className="tasks-section-title">Tareas de Investigación</h2>
+          <div className="tasks-grid">
+            {Array.from(tasks.values())
+              .sort((a, b) => a.code.localeCompare(b.code))
+              .map((task) => (
+                <TaskCard
+                  key={task.code}
+                  taskCode={task.code}
+                  taskId={task.id}
+                  taskName={task.name}
+                  severity={task.severity}
+                  events={task.events}
+                  result={task.result}
+                  status={task.status}
+                />
+              ))}
+          </div>
         </div>
       )}
 

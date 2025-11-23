@@ -95,8 +95,8 @@ class FraudDetectionWorkflow:
 
     def __init__(
         self,
-        ranking_model: str = "google/gemini-2.5-flash-preview-09-2025",
-        detection_model: str = "google/gemini-2.5-flash-preview-09-2025",
+        ranking_model: str = "google/gemini-2.5-flash-lite-preview-09-2025",
+        detection_model: str = "google/gemini-2.5-flash-lite-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -117,7 +117,9 @@ class FraudDetectionWorkflow:
         self.graph = self._build_graph()
         self.app = self.graph.compile()
 
-    def _send_log(self, session_id: Optional[str], message: str):
+    def _send_log(
+        self, session_id: Optional[str], message: str, task_code: Optional[str] = None
+    ):
         """
         Send a log message via WebSocket if session_id is provided.
 
@@ -126,21 +128,22 @@ class FraudDetectionWorkflow:
         Args:
             session_id: Optional session ID for WebSocket streaming
             message: Log message to send
+            task_code: Optional task code (e.g., "H-01") to associate this log with a specific task
         """
         if session_id:
             try:
-                asyncio.run(
-                    manager.send_observation(
-                        session_id,
-                        {
-                            "type": "log",
-                            "message": message,
-                            "timestamp": datetime.now().isoformat(),
-                        },
-                    )
-                )
+                observation = {
+                    "type": "log",
+                    "message": message,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                if task_code:
+                    observation["task_code"] = task_code
+
+                asyncio.run(manager.send_observation(session_id, observation))
             except Exception as e:
                 import traceback
+
                 print(f"Failed to send log to WebSocket: {e}")
                 traceback.print_exc()
 
@@ -216,6 +219,7 @@ class FraudDetectionWorkflow:
 
         except Exception as e:
             import traceback
+
             error_msg = f"Failed to fetch tender data: {str(e)}"
             self._send_log(session_id, f"ERROR: {error_msg}")
             self._send_log(
@@ -349,6 +353,7 @@ Return the ranked tasks with rationale.
 
         except Exception as e:
             import traceback
+
             self._send_log(session_id, f"ERROR: Task ranking failed - {str(e)}")
             self._send_log(
                 session_id, "Using fallback strategy: selecting first 5 tasks by ID"
@@ -418,12 +423,16 @@ Return the ranked tasks with rationale.
         investigation_id = inputs.get("investigation_id", "unknown")
         session_id = inputs.get("session_id")
 
+        # Extract task_code at the start and store it locally for all logs in this execution context
+        task_code = task.get("code", "Unknown") if task else "Unknown"
+
         self._send_log(
             session_id,
-            f"Investigation {investigation_id} starting for Task {task['id']} ({task['code']})...",
+            f"Investigation {investigation_id} starting for Task {task['id']} ({task_code})...",
+            task_code=task_code,
         )
         print(
-            f"Investigation {investigation_id} starting for Task {task['id']} ({task['code']})..."
+            f"Investigation {investigation_id} starting for Task {task['id']} ({task_code})..."
         )
 
         try:
@@ -435,7 +444,6 @@ Return the ranked tasks with rationale.
             # Prepare message for investigation
             tender_context = inputs.get("tender_context")
             task_id = task.get("id", 0)
-            task_code = task.get("code", "Unknown")
             task_name = task.get("name", "Unknown task")
             task_desc = task.get("desc", "No description")
             task_where = task.get("where_to_look", "Not specified")
@@ -444,7 +452,9 @@ Return the ranked tasks with rationale.
 
             # Log subtask information
             self._send_log(
-                session_id, f"Task {task_id}: Validating {len(task_subtasks)} subtasks"
+                session_id,
+                f"Task {task_id}: Validating {len(task_subtasks)} subtasks",
+                task_code=task_code,
             )
 
             message = f"""
@@ -481,7 +491,9 @@ Please investigate this task systematically and report your findings.
 
             # Run investigation (reusing FraudDetectionAgent but with task-based input)
             self._send_log(
-                session_id, f"Task {task['id']}: Agent starting deep investigation..."
+                session_id,
+                f"Task {task['id']}: Agent starting deep investigation...",
+                task_code=task_code,
             )
             detection_input = FraudDetectionInput(
                 tender_id=tender_context.tender_id,
@@ -495,6 +507,7 @@ Please investigate this task systematically and report your findings.
             self._send_log(
                 session_id,
                 f"Task {task['id']}: Agent completed. Found {len(result.anomalies)} anomalies",
+                task_code=task_code,
             )
 
             # Convert to TaskInvestigationOutput
@@ -510,6 +523,7 @@ Please investigate this task systematically and report your findings.
             self._send_log(
                 session_id,
                 f"Task {task['id']} investigation complete. Validation passed: {task_result.validation_passed}",
+                task_code=task_code,
             )
             print(
                 f"Task {task['id']} investigation complete. Validation passed: {task_result.validation_passed}"
@@ -520,13 +534,17 @@ Please investigate this task systematically and report your findings.
 
         except Exception as e:
             import traceback
+
             error_msg = f"{type(e).__name__}: {str(e)}"
             self._send_log(
                 session_id,
                 f"ERROR: Task {task['id']} investigation failed - {error_msg}",
+                task_code=task_code,
             )
             self._send_log(
-                session_id, f"Task {task['id']}: Marking investigation as failed"
+                session_id,
+                f"Task {task['id']}: Marking investigation as failed",
+                task_code=task_code,
             )
             print(f"Task {task['id']} investigation failed: {e}")
             traceback.print_exc()
@@ -592,6 +610,7 @@ Please investigate this task systematically and report your findings.
 
                 except Exception as e:
                     import traceback
+
                     logging.warning(f"Failed to delete temp file {file_path}: {e}")
                     traceback.print_exc()
 
@@ -610,6 +629,7 @@ Please investigate this task systematically and report your findings.
         except Exception as e:
             # Don't raise - cleanup failures shouldn't break the workflow
             import traceback
+
             logging.warning(f"Temp file cleanup failed: {e}")
             traceback.print_exc()
             print(f"Warning: Temp file cleanup failed: {e}")
@@ -688,6 +708,7 @@ Please investigate this task systematically and report your findings.
         except Exception as e:
             # Don't let cleanup errors affect the workflow result
             import traceback
+
             self._send_log(session_id, f"Warning: Cleanup failed - {str(e)}")
             logging.warning(f"Cleanup failed but workflow completed successfully: {e}")
             traceback.print_exc()
@@ -796,4 +817,3 @@ def detect_fraud(tender_id: str) -> List[TaskInvestigationOutput]:
     workflow = FraudDetectionWorkflow()
     result = workflow.run(tender_id)
     return result["tasks_by_id"]
-

@@ -1,6 +1,7 @@
 """
 Fraud Detection Agent - Deep investigation of individual tenders for fraud indicators
 """
+
 from typing import Dict, Any
 
 from langchain_openai import ChatOpenAI
@@ -45,7 +46,7 @@ class FraudDetectionAgent:
 
     def __init__(
         self,
-        model_name: str = "google/gemini-2.5-flash-preview-09-2025",
+        model_name: str = "google/gemini-2.5-flash-lite-preview-09-2025",
         temperature: float = 0.7,
     ):
         """
@@ -72,7 +73,7 @@ class FraudDetectionAgent:
             read_buyer_attachments_table,
             read_buyer_attachment_doc,
             read_award_result,
-            read_award_result_attachment_doc
+            read_award_result_attachment_doc,
         ]
 
         # Create fraud detection agent with structured output
@@ -80,7 +81,7 @@ class FraudDetectionAgent:
             model=model,
             tools=tools,
             system_prompt=fraud_detection_agent.SYS_PROMPT,
-            response_format=ToolStrategy(FraudDetectionOutput)
+            response_format=ToolStrategy(FraudDetectionOutput),
         )
 
     def run(self, input_data: FraudDetectionInput) -> FraudDetectionOutput:
@@ -134,9 +135,7 @@ INVESTIGATION REQUIREMENTS:
 Investigate systematically and return detailed anomalies with evidence.
 """
 
-        result = self.agent.invoke({
-            "messages": [{"role": "user", "content": message}]
-        })
+        result = self.agent.invoke({"messages": [{"role": "user", "content": message}]})
 
         # Return the structured response
         return result["structured_response"]
@@ -157,12 +156,14 @@ Investigate systematically and return detailed anomalies with evidence.
         formatted = []
         for key, value in context.items():
             # Convert key from snake_case to Title Case
-            display_key = key.replace('_', ' ').title()
+            display_key = key.replace("_", " ").title()
             formatted.append(f"{display_key}: {value}")
 
         return "\n".join(formatted)
 
-    def investigate_batch(self, inputs: list[FraudDetectionInput]) -> list[FraudDetectionOutput]:
+    def investigate_batch(
+        self, inputs: list[FraudDetectionInput]
+    ) -> list[FraudDetectionOutput]:
         """
         Investigate multiple tenders sequentially.
 
@@ -183,13 +184,14 @@ Investigate systematically and return detailed anomalies with evidence.
             except Exception as e:
                 # Create error response
                 import traceback
+
                 print(f"Investigation failed for tender {input_data.tender_id}: {e}")
                 traceback.print_exc()
                 error_result = FraudDetectionOutput(
                     tender_id=input_data.tender_id,
                     is_fraudulent=False,
                     anomalies=[],
-                    investigation_summary=f"Investigation failed: {str(e)}"
+                    investigation_summary=f"Investigation failed: {str(e)}",
                 )
                 results.append(error_result)
 

@@ -15,6 +15,11 @@ from app.tools.read_supplier_attachments import (
 from mistralai import Mistral
 from app.config import settings
 import base64
+from app.utils.document_reader import (
+    detect_file_type,
+    get_file_extension_from_mime,
+    extract_text_locally
+)
 
 
 def build_ranking_input(
@@ -185,50 +190,76 @@ def fetch_and_extract_documents(
                 _send_log(session_id, f"Processing document {idx+1}/{docs_to_process}: {att_name}")
                 print(f"  Attempting to read document {idx + 1}: {att_name}")
 
-                # Extract first few pages to get overview
-                api_key = settings.mistral_api_key
-                if not api_key:
-                    print(f"  ✗ MISTRAL_API_KEY not set, skipping document {idx + 1}")
-                    continue
-
                 # Download the file content
                 file_content = download_buyer_attachment_by_tender_id_and_row_id(tender_id, idx)
 
-                # Encode PDF to base64
-                base64_pdf = base64.b64encode(file_content).decode('utf-8')
+                # Detect file type
+                try:
+                    mime_type = detect_file_type(file_content)
+                except Exception as e:
+                    print(f"  Warning: Could not detect file type, defaulting to PDF: {e}")
+                    mime_type = "application/pdf"
 
-                # Initialize Mistral client
-                client = Mistral(api_key=api_key)
+                combined_text = ""
+                
+                # Try local extraction for DOCX files
+                if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    local_result = extract_text_locally(file_content, mime_type)
+                    
+                    if local_result["success"]:
+                        text = local_result["text"]
+                        if len(text) >= 100:
+                            combined_text = text
+                            print(f"  ✓ Successfully extracted text from DOCX (local)")
+                        else:
+                            print(f"  ✗ DOCX text too short ({len(text)} chars), skipping")
+                            continue
+                    else:
+                        print(f"  ✗ Failed to extract text from DOCX: {local_result.get('error', 'Unknown error')}")
+                        continue
+                
+                # For PDFs and images, use Mistral OCR
+                else:
+                    api_key = settings.mistral_api_key
+                    if not api_key:
+                        print(f"  ✗ MISTRAL_API_KEY not set, skipping document {idx + 1}")
+                        continue
 
-                # Read first 5 pages (0-indexed: 0-4)
-                start_page = 1
-                end_page = 5
-                pages_to_process = list(range(start_page - 1, end_page))
+                    # Encode to base64
+                    base64_file = base64.b64encode(file_content).decode('utf-8')
 
-                # Call Mistral OCR API
-                ocr_response = client.ocr.process(
-                    model="mistral-ocr-latest",
-                    document={
-                        "type": "document_url",
-                        "document_url": f"data:application/pdf;base64,{base64_pdf}"
-                    },
-                    pages=pages_to_process,
-                    include_image_base64=False
-                )
+                    # Initialize Mistral client
+                    client = Mistral(api_key=api_key)
 
-                # Extract text from response
-                extracted_text = []
-                pages_read = []
+                    # Read first 5 pages (0-indexed: 0-4)
+                    start_page = 1
+                    end_page = 5
+                    pages_to_process = list(range(start_page - 1, end_page))
 
-                for page in ocr_response.pages:
-                    page_num = page.index  # 0-indexed
-                    markdown_text = page.markdown
+                    # Call Mistral OCR API
+                    ocr_response = client.ocr.process(
+                        model="mistral-ocr-latest",
+                        document={
+                            "type": "document_url",
+                            "document_url": f"data:{mime_type};base64,{base64_file}"
+                        },
+                        pages=pages_to_process,
+                        include_image_base64=False
+                    )
 
-                    if markdown_text:
-                        extracted_text.append(f"--- Page {page_num + 1} ---\n{markdown_text}")
-                        pages_read.append(page_num + 1)
+                    # Extract text from response
+                    extracted_text = []
+                    pages_read = []
 
-                combined_text = "\n\n".join(extracted_text)
+                    for page in ocr_response.pages:
+                        page_num = page.index  # 0-indexed
+                        markdown_text = page.markdown
+
+                        if markdown_text:
+                            extracted_text.append(f"--- Page {page_num + 1} ---\n{markdown_text}")
+                            pages_read.append(page_num + 1)
+
+                    combined_text = "\n\n".join(extracted_text)
 
                 if combined_text:
                     documents.append({
