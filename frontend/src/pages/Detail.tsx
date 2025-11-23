@@ -86,7 +86,7 @@ export function Detail() {
         setTasks((prevTasks) => {
           const newTasks = new Map(prevTasks)
           const taskCode = log.task_code!
-          
+
           // Get or create task entry
           let taskInfo = newTasks.get(taskCode)
           if (!taskInfo) {
@@ -124,11 +124,11 @@ export function Detail() {
       if (log.type === 'result' && log.tasks_by_id) {
         setTasks((prevTasks) => {
           const newTasks = new Map(prevTasks)
-          
-          log.tasks_by_id.forEach((taskResult: any) => {
+
+          log?.tasks_by_id?.forEach((taskResult: any) => {
             const taskCode = taskResult.task_code
             const taskInfo = newTasks.get(taskCode)
-            
+
             if (taskInfo) {
               taskInfo.id = taskResult.task_id
               taskInfo.name = taskResult.task_name
@@ -161,7 +161,7 @@ export function Detail() {
               })
             }
           })
-          
+
           return newTasks
         })
       }

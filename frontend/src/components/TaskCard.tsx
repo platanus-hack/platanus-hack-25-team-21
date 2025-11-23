@@ -27,7 +27,6 @@ interface TaskCardProps {
 
 export function TaskCard({
   taskCode,
-  taskId,
   taskName,
   severity,
   events,
@@ -94,9 +93,9 @@ export function TaskCard({
           {getStatusText()}
         </div>
       </div>
-      
+
       <div className="task-card-name">{taskName}</div>
-      
+
       {events.length > 0 && (
         <div className="task-card-events">
           <div className="task-card-events-header">
